@@ -78,17 +78,19 @@ export const loginUser = async (req: Request, res: Response) => {
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
-        const accessToken = generateToken((user._id as unknown) as string);
-        const refreshToken = generateRefreshToken((user._id as unknown) as string);
+      const accessToken = generateToken((user._id as unknown) as string);
+      const refreshToken = generateRefreshToken((user._id as unknown) as string);
 
-        user.refreshToken = refreshToken;
-        await user.save();
+      user.refreshToken = refreshToken;
+      await user.save();
 
       res.json({
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
+        addresses: user.addresses,
         accessToken,
         refreshToken
       });

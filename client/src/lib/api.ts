@@ -1,4 +1,10 @@
 import axios from 'axios';
+import supabase from './supabase';
+
+// This API client is ONLY used for Express backend endpoints that still need server-side logic:
+// - /api/payment (Razorpay)
+// - /api/coupons/apply (coupon validation)
+// - /api/orders (order creation with server-side total calc)
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
@@ -7,28 +13,16 @@ const api = axios.create({
   },
 });
 
+// Attach Supabase auth token to Express requests
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
     }
     return config;
   },
   (error) => Promise.reject(error)
-);
-
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      // Refresh token logic not yet implemented — reject for now
-      return Promise.reject(error);
-    }
-    return Promise.reject(error);
-  }
 );
 
 export default api;

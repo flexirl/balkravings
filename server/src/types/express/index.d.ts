@@ -1,9 +1,10 @@
-import { IUser } from "../../models/User";
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser;
-    }
+// Augment Express Request with Supabase user
+declare namespace Express {
+  interface Request {
+    user?: {
+      id: string;
+      email: string;
+      role: string;
+    };
   }
 }

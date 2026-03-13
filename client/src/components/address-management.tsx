@@ -17,35 +17,39 @@ export default function AddressManagement() {
     street: string;
     city: string;
     state: string;
-    postalCode: string;
+    postal_code: string;
     country: string;
-    phoneNumber: string;
-    isDefault: boolean;
+    phone_number: string;
+    is_default: boolean;
   }>({
     type: 'home',
     street: '',
     city: '',
     state: '',
-    postalCode: '',
+    postal_code: '',
     country: '',
-    phoneNumber: '',
-    isDefault: false,
+    phone_number: '',
+    is_default: false,
   })
 
   useEffect(() => {
     fetchAddresses()
-  }, [])
+  }, [user])
 
   const fetchAddresses = async () => {
+    if (!user) {
+      setLoading(false)
+      return
+    }
     try {
       setLoading(true)
-      const data = await profileAPI.getAddresses()
+      const data = await profileAPI.getAddresses(user.id)
       setAddresses(data)
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } }
+      const err = error as { message?: string }
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Failed to load addresses',
+        text: err.message || 'Failed to load addresses',
       })
     } finally {
       setLoading(false)
@@ -64,12 +68,13 @@ export default function AddressManagement() {
     e.preventDefault()
     setMessage(null)
 
+    if (!user) return
     try {
       let updatedAddresses
       if (editingId) {
-        updatedAddresses = await profileAPI.updateAddress(editingId, formData)
+        updatedAddresses = await profileAPI.updateAddress(user.id, editingId, formData)
       } else {
-        updatedAddresses = await profileAPI.addAddress(formData as Omit<Address, '_id'>)
+        updatedAddresses = await profileAPI.addAddress(user.id, formData as Omit<Address, 'id'>)
       }
       setAddresses(updatedAddresses)
       updateUser({ addresses: updatedAddresses })
@@ -79,10 +84,10 @@ export default function AddressManagement() {
       })
       resetForm()
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } }
+      const err = error as { message?: string }
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Failed to save address',
+        text: err.message || 'Failed to save address',
       })
     }
   }
@@ -93,28 +98,29 @@ export default function AddressManagement() {
       street: address.street,
       city: address.city,
       state: address.state,
-      postalCode: address.postalCode,
+      postal_code: address.postal_code,
       country: address.country,
-      phoneNumber: address.phoneNumber,
-      isDefault: address.isDefault,
+      phone_number: address.phone_number,
+      is_default: address.is_default,
     })
-    setEditingId(address._id || null)
+    setEditingId(address.id || null)
     setShowForm(true)
   }
 
   const handleDelete = async (addressId: string) => {
+    if (!user) return
     if (!window.confirm('Are you sure you want to delete this address?')) return
 
     try {
-      const updatedAddresses = await profileAPI.deleteAddress(addressId)
+      const updatedAddresses = await profileAPI.deleteAddress(user.id, addressId)
       setAddresses(updatedAddresses)
       updateUser({ addresses: updatedAddresses })
       setMessage({ type: 'success', text: 'Address deleted successfully!' })
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } }
+      const err = error as { message?: string }
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Failed to delete address',
+        text: err.message || 'Failed to delete address',
       })
     }
   }
@@ -125,10 +131,10 @@ export default function AddressManagement() {
       street: '',
       city: '',
       state: '',
-      postalCode: '',
+      postal_code: '',
       country: '',
-      phoneNumber: '',
-      isDefault: false,
+      phone_number: '',
+      is_default: false,
     })
     setEditingId(null)
     setShowForm(false)
@@ -150,22 +156,22 @@ export default function AddressManagement() {
 
       <div className={styles.addressesGrid}>
         {addresses.map((address) => (
-          <div key={address._id} className={styles.addressCard}>
+          <div key={address.id} className={styles.addressCard}>
             <div className={styles.cardHeader}>
               <h3 className={styles.addressType}>{address.type.charAt(0).toUpperCase() + address.type.slice(1)}</h3>
-              {address.isDefault && <span className={styles.badge}>Default</span>}
+              {address.is_default && <span className={styles.badge}>Default</span>}
             </div>
             <p className={styles.addressText}>{address.street}</p>
             <p className={styles.addressText}>
-              {address.city}, {address.state} {address.postalCode}
+              {address.city}, {address.state} {address.postal_code}
             </p>
             <p className={styles.addressText}>{address.country}</p>
-            <p className={styles.phone}>📞 {address.phoneNumber}</p>
+            <p className={styles.phone}>📞 {address.phone_number}</p>
             <div className={styles.actions}>
               <button className={styles.editBtn} onClick={() => handleEdit(address)}>
                 Edit
               </button>
-              <button className={styles.deleteBtn} onClick={() => handleDelete(address._id || '')}>
+              <button className={styles.deleteBtn} onClick={() => handleDelete(address.id || '')}>
                 Delete
               </button>
             </div>
@@ -206,14 +212,14 @@ export default function AddressManagement() {
             </div>
 
             <div className={styles.formGroup}>
-              <label htmlFor="phoneNumber" className={styles.label}>
+              <label htmlFor="phone_number" className={styles.label}>
                 Phone Number
               </label>
               <input
                 type="tel"
-                id="phoneNumber"
-                name="phoneNumber"
-                value={formData.phoneNumber}
+                id="phone_number"
+                name="phone_number"
+                value={formData.phone_number}
                 onChange={handleChange}
                 className={styles.input}
                 required
@@ -273,14 +279,14 @@ export default function AddressManagement() {
 
           <div className={styles.formRow}>
             <div className={styles.formGroup}>
-              <label htmlFor="postalCode" className={styles.label}>
+              <label htmlFor="postal_code" className={styles.label}>
                 Postal Code
               </label>
               <input
                 type="text"
-                id="postalCode"
-                name="postalCode"
-                value={formData.postalCode}
+                id="postal_code"
+                name="postal_code"
+                value={formData.postal_code}
                 onChange={handleChange}
                 placeholder="Postal code"
                 className={styles.input}
@@ -308,13 +314,13 @@ export default function AddressManagement() {
           <div className={styles.checkboxGroup}>
             <input
               type="checkbox"
-              id="isDefault"
-              name="isDefault"
-              checked={formData.isDefault}
+              id="is_default"
+              name="is_default"
+              checked={formData.is_default}
               onChange={handleChange}
               className={styles.checkbox}
             />
-            <label htmlFor="isDefault" className={styles.checkboxLabel}>
+            <label htmlFor="is_default" className={styles.checkboxLabel}>
               Set as default address
             </label>
           </div>

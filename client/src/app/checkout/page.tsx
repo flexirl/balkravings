@@ -7,34 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import api from "@/lib/api"
+import supabase from "@/lib/supabase"
 import {
   Loader2,
-  CreditCard,
   Banknote,
   MapPin,
   Phone,
   User,
   ShieldCheck,
-  CheckCircle2,
   ShoppingBag,
 } from "lucide-react"
 import Link from "next/link"
-import { AxiosError } from "axios"
-
-interface RazorpayResponse {
-  razorpay_order_id: string
-  razorpay_payment_id: string
-  razorpay_signature: string
-}
-
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  interface Window { Razorpay: any }
-}
 
 export default function CheckoutPage() {
   const { items, totalAmount, clearCart } = useCart()
@@ -42,17 +27,9 @@ export default function CheckoutPage() {
   const router = useRouter()
 
   const [customerName, setCustomerName] = useState(user?.name || "")
-  const [phone, setPhone] = useState("")
+  const [phone, setPhone] = useState(user?.phone || "")
   const [address, setAddress] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState<"razorpay" | "cod">("razorpay")
   const [isLoading, setIsLoading] = useState(false)
-
-  // OTP verification state
-  const [otp, setOtp] = useState("")
-  const [otpSent, setOtpSent] = useState(false)
-  const [otpVerified, setOtpVerified] = useState(false)
-  const [generatedOtp, setGeneratedOtp] = useState("")
-  const [otpTimer, setOtpTimer] = useState(0)
 
   // Dynamic fees from settings
   const [deliveryFeeBase, setDeliveryFeeBase] = useState(40)
@@ -67,70 +44,60 @@ export default function CheckoutPage() {
   const [couponApplied, setCouponApplied] = useState("")
   const [couponLoading, setCouponLoading] = useState(false)
 
-  // Load Razorpay script
+  // Auto-fill default address from user's saved addresses
   useEffect(() => {
-    const script = document.createElement("script")
-    script.src = "https://checkout.razorpay.com/v1/checkout.js"
-    script.async = true
-    document.body.appendChild(script)
-    return () => { document.body.removeChild(script) }
-  }, [])
-
-  // OTP cooldown timer
-  useEffect(() => {
-    if (otpTimer > 0) {
-      const timer = setInterval(() => setOtpTimer((t) => t - 1), 1000)
-      return () => clearInterval(timer)
+    if (user?.name && !customerName) {
+      setCustomerName(user.name)
     }
-  }, [otpTimer])
-
-  const sendOtp = () => {
-    if (phone.length !== 10) {
-      toast.error("Please enter a valid 10-digit mobile number")
-      return
+    
+    if (user?.addresses && user.addresses.length > 0) {
+      const defaultAddress = user.addresses.find((addr) => addr.is_default)
+      
+      if (defaultAddress) {
+        const formattedAddress = [
+          defaultAddress.street,
+          defaultAddress.city,
+          defaultAddress.state,
+          defaultAddress.postal_code,
+          defaultAddress.country,
+        ].filter(Boolean).join(", ")
+        
+        setAddress(formattedAddress)
+        
+        if (!phone && defaultAddress.phone_number) {
+          setPhone(defaultAddress.phone_number)
+        }
+      }
     }
-    // Generate a 6-digit OTP (demo — in production, use SMS gateway)
-    const code = Math.floor(100000 + Math.random() * 900000).toString()
-    setGeneratedOtp(code)
-    setOtpSent(true)
-    setOtpTimer(30)
-    toast.success(`OTP sent! (Demo OTP: ${code})`, { duration: 8000 })
-  }
+  }, [user, phone, customerName])
 
-  const verifyOtp = () => {
-    if (otp === generatedOtp) {
-      setOtpVerified(true)
-      toast.success("Mobile number verified!")
-    } else {
-      toast.error("Invalid OTP. Please try again.")
-    }
-  }
-
-  // Fetch settings & availability
+  // Fetch settings & availability from Supabase
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const [settingsRes, foodsRes] = await Promise.all([
-          api.get("/settings"),
-          api.get("/foods") // Public foods
+        const [settingsResult, foodsResult] = await Promise.all([
+          supabase.from('settings').select('*').single(),
+          supabase.from('foods').select('id, availability'),
         ])
         
-        const data = settingsRes.data
-        setDeliveryFeeBase(data.deliveryFee ?? 40)
-        setGstPercent(data.gstPercent ?? 5)
-        setFreeDeliveryAbove(data.freeDeliveryAbove ?? 0)
-        setIsStoreOpen(data.isStoreOpen ?? true)
+        if (settingsResult.data) {
+          const data = settingsResult.data
+          setDeliveryFeeBase(data.delivery_fee ?? 40)
+          setGstPercent(data.gst_percent ?? 5)
+          setFreeDeliveryAbove(data.free_delivery_above ?? 0)
+          setIsStoreOpen(data.is_store_open ?? true)
+        }
         
-        // Check availability
-        const availableFoods = foodsRes.data
-        const outOfStockIds = items
-          .filter((cartItem) => {
-             const dbItem = availableFoods.find((f: { _id: string; availability: boolean }) => f._id === cartItem.foodId)
-             return !dbItem || dbItem.availability === false
-          })
-          .map((item) => item.foodId)
-          
-        setUnavailableItems(outOfStockIds)
+        if (foodsResult.data) {
+          const outOfStockIds = items
+            .filter((cartItem) => {
+               const dbItem = foodsResult.data.find((f: { id: string; availability: boolean }) => f.id === cartItem.foodId)
+               return !dbItem || dbItem.availability === false
+            })
+            .map((item) => item.foodId)
+            
+          setUnavailableItems(outOfStockIds)
+        }
       } catch { /* fallback to defaults */ }
     }
     if (items.length > 0) fetchStatus()
@@ -144,13 +111,53 @@ export default function CheckoutPage() {
     if (!couponCode.trim()) return
     setCouponLoading(true)
     try {
-      const { data } = await api.post("/coupons/apply", { code: couponCode, orderTotal: totalAmount })
-      setCouponDiscount(data.discount)
-      setCouponApplied(data.code)
-      toast.success(data.message)
-    } catch (error: unknown) {
-      const axiosError = error as import("axios").AxiosError<{ message?: string }>
-      toast.error(axiosError.response?.data?.message || "Invalid coupon")
+      // Validate coupon from Supabase
+      const { data: coupon, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('code', couponCode.toUpperCase())
+        .eq('is_active', true)
+        .single()
+
+      if (error || !coupon) {
+        toast.error("Invalid or expired coupon")
+        setCouponDiscount(0)
+        setCouponApplied("")
+        return
+      }
+
+      // Check expiry
+      if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+        toast.error("This coupon has expired")
+        return
+      }
+
+      // Check min order
+      if (totalAmount < coupon.min_order) {
+        toast.error(`Minimum order ₹${coupon.min_order} required for this coupon`)
+        return
+      }
+
+      // Check usage limit
+      if (coupon.usage_limit > 0 && coupon.used_count >= coupon.usage_limit) {
+        toast.error("This coupon has reached its usage limit")
+        return
+      }
+
+      // Calculate discount
+      let discount = 0
+      if (coupon.discount_type === 'percent') {
+        discount = Math.round(totalAmount * (coupon.discount_value / 100))
+        if (coupon.max_discount > 0) discount = Math.min(discount, coupon.max_discount)
+      } else {
+        discount = coupon.discount_value
+      }
+
+      setCouponDiscount(discount)
+      setCouponApplied(coupon.code)
+      toast.success(`Coupon applied! ₹${discount} off`)
+    } catch {
+      toast.error("Failed to apply coupon")
       setCouponDiscount(0)
       setCouponApplied("")
     } finally {
@@ -162,48 +169,6 @@ export default function CheckoutPage() {
     setCouponCode("")
     setCouponDiscount(0)
     setCouponApplied("")
-  }
-
-  const handleRazorpayPayment = async (orderId: string) => {
-    try {
-      const { data } = await api.post("/payment/create-order", { amount: grandTotal })
-
-      const options = {
-        key: data.keyId,
-        amount: data.amount,
-        currency: data.currency,
-        name: "KRAVINGS BY ARF",
-        description: "Food Order Payment",
-        order_id: data.orderId,
-        handler: async (response: RazorpayResponse) => {
-          try {
-            await api.post("/payment/verify", {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              orderId,
-            })
-            clearCart()
-            toast.success("Payment successful! Order placed.")
-            router.push("/orders")
-          } catch {
-            toast.error("Payment verification failed")
-          }
-        },
-        prefill: {
-          name: customerName,
-          contact: phone,
-          email: user?.email || "",
-        },
-        theme: { color: "#ea580c" },
-      }
-
-      const rzp = new window.Razorpay(options)
-      rzp.on("payment.failed", () => toast.error("Payment failed"))
-      rzp.open()
-    } catch {
-      toast.error("Failed to initiate payment")
-    }
   }
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -226,8 +191,8 @@ export default function CheckoutPage() {
       toast.error("Your cart is empty")
       return
     }
-    if (!otpVerified) {
-      toast.error("Please verify your mobile number first")
+    if (!phone || phone.length < 10) {
+      toast.error("Please enter a valid phone number")
       return
     }
     if (!address.trim()) {
@@ -238,31 +203,70 @@ export default function CheckoutPage() {
     setIsLoading(true)
 
     try {
-      const { data: order } = await api.post("/orders", {
-        deliveryAddress: address,
-        paymentMethod,
-        customerName,
-        customerPhone: phone,
-        items: items.map((item) => ({
-          foodId: item.foodId,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-          image: item.image,
-        })),
-        totalAmount: grandTotal,
-      })
+      // Create order in Supabase
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          user_id: user.id,
+          total_amount: grandTotal,
+          payment_status: 'pending',
+          order_status: 'placed',
+          delivery_address: address,
+          customer_name: customerName,
+          customer_phone: phone,
+          phone_verified: true,
+          payment_method: 'cod',
+        })
+        .select()
+        .single()
 
-      if (paymentMethod === "razorpay") {
-        await handleRazorpayPayment(order._id)
-      } else {
-        clearCart()
-        toast.success("Order placed! Pay on delivery.")
-        router.push("/orders")
+      if (orderError || !order) {
+        throw new Error(orderError?.message || 'Failed to create order')
       }
+
+      // Insert order items
+      const orderItems = items.map((item) => ({
+        order_id: order.id,
+        food_id: item.foodId,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        image: item.image,
+      }))
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems)
+
+      if (itemsError) {
+        console.error('Order items error:', itemsError.message)
+      }
+
+      // Update coupon usage if applied
+      if (couponApplied) {
+        try {
+          const { data: coupon } = await supabase
+            .from('coupons')
+            .select('used_count')
+            .eq('code', couponApplied)
+            .single()
+          if (coupon) {
+            await supabase
+              .from('coupons')
+              .update({ used_count: (coupon.used_count || 0) + 1 })
+              .eq('code', couponApplied)
+          }
+        } catch {
+          // ignore coupon update errors
+        }
+      }
+
+      clearCart()
+      toast.success("Order placed! Pay on delivery.")
+      router.push("/orders")
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<{ message?: string }>
-      toast.error(axiosError.response?.data?.message || "Failed to place order")
+      const err = error as { message?: string }
+      toast.error(err.message || "Failed to place order")
     } finally {
       setIsLoading(false)
     }
@@ -320,7 +324,6 @@ export default function CheckoutPage() {
                 <div className="space-y-2">
                   <Label htmlFor="phone" className="text-sm flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5 text-muted-foreground" /> Mobile Number
-                    {otpVerified && <CheckCircle2 className="h-4 w-4 text-green-500" />}
                   </Label>
                   <div className="flex gap-2">
                     <div className="flex items-center px-3 rounded-xl bg-secondary border border-border text-sm text-muted-foreground">
@@ -332,48 +335,10 @@ export default function CheckoutPage() {
                       required
                       maxLength={10}
                       value={phone}
-                      onChange={(e) => {
-                        setPhone(e.target.value.replace(/\D/g, ""))
-                        if (otpVerified) setOtpVerified(false)
-                        if (otpSent) setOtpSent(false)
-                      }}
-                      disabled={otpVerified}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
                       className="h-11 rounded-xl bg-secondary border-border focus:border-primary/50 flex-1"
                     />
-                    {!otpVerified && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11 rounded-xl border-primary/30 text-primary hover:bg-primary/10 px-4"
-                        onClick={sendOtp}
-                        disabled={phone.length !== 10 || otpTimer > 0}
-                      >
-                        {otpTimer > 0 ? `${otpTimer}s` : "Send OTP"}
-                      </Button>
-                    )}
                   </div>
-
-                  {/* OTP Input */}
-                  {otpSent && !otpVerified && (
-                    <div className="flex gap-2 mt-2">
-                      <Input
-                        placeholder="Enter 6-digit OTP"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                        maxLength={6}
-                        className="h-10 rounded-xl bg-secondary border-border flex-1"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-10 rounded-xl bg-green-600 hover:bg-green-700 text-white px-4"
-                        onClick={verifyOtp}
-                        disabled={otp.length !== 6}
-                      >
-                        Verify
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -392,53 +357,21 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Payment Method */}
+            {/* Payment Method — COD only */}
             <div className="p-6 rounded-2xl bg-card border border-border space-y-5">
               <h3 className="font-bold text-lg flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-primary" /> Payment Method
+                <Banknote className="h-5 w-5 text-primary" /> Payment Method
               </h3>
 
-              <RadioGroup
-                value={paymentMethod}
-                onValueChange={(v) => setPaymentMethod(v as "razorpay" | "cod")}
-                className="space-y-3"
-              >
-                <label
-                  htmlFor="razorpay"
-                  className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
-                    paymentMethod === "razorpay"
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border hover:border-border/80"
-                  }`}
-                >
-                  <RadioGroupItem value="razorpay" id="razorpay" />
-                  <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <CreditCard className="h-5 w-5 text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">Pay Online (Razorpay)</p>
-                    <p className="text-xs text-muted-foreground">UPI, Cards, Wallets, Net Banking</p>
-                  </div>
-                </label>
-
-                <label
-                  htmlFor="cod"
-                  className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
-                    paymentMethod === "cod"
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border hover:border-border/80"
-                  }`}
-                >
-                  <RadioGroupItem value="cod" id="cod" />
-                  <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                    <Banknote className="h-5 w-5 text-green-400" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">Cash on Delivery</p>
-                    <p className="text-xs text-muted-foreground">Pay when your order arrives</p>
-                  </div>
-                </label>
-              </RadioGroup>
+              <div className="flex items-center gap-4 p-4 rounded-xl border border-primary/40 bg-primary/5">
+                <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                  <Banknote className="h-5 w-5 text-green-500" />
+                </div>
+                <div>
+                  <p className="font-medium text-sm">Cash on Delivery</p>
+                  <p className="text-xs text-muted-foreground">Pay when your order arrives</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -535,7 +468,7 @@ export default function CheckoutPage() {
 
               <Button
                 type="submit"
-                disabled={isLoading || !otpVerified || !isStoreOpen || unavailableItems.length > 0}
+                disabled={isLoading || !isStoreOpen || unavailableItems.length > 0}
                 className={`w-full h-12 text-base rounded-xl transition-all ${
                   !isStoreOpen || unavailableItems.length > 0
                     ? "bg-secondary text-muted-foreground" 
@@ -548,10 +481,8 @@ export default function CheckoutPage() {
                   <>Items Out of Stock</>
                 ) : isLoading ? (
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : paymentMethod === "razorpay" ? (
-                  <>Pay ₹{grandTotal}</>
                 ) : (
-                  <>Place Order (COD)</>
+                  <>Place Order (₹{grandTotal})</>
                 )}
               </Button>
 
@@ -559,13 +490,9 @@ export default function CheckoutPage() {
                 <p className="text-xs text-center text-destructive font-medium">
                   We are not accepting orders at this time
                 </p>
-              ) : unavailableItems.length > 0 ? (
+              ) : unavailableItems.length > 0 && (
                 <p className="text-xs text-center text-destructive font-medium">
                   Please return to cart to remove unavailable items
-                </p>
-              ) : !otpVerified && (
-                <p className="text-xs text-center text-muted-foreground">
-                  Please verify your mobile number to proceed
                 </p>
               )}
             </div>

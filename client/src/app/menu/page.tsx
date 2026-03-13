@@ -4,19 +4,20 @@ import { useState, useEffect, useMemo } from "react"
 import { FoodCard } from "@/components/food-card"
 import { Input } from "@/components/ui/input"
 import { Search, Flame, Loader2 } from "lucide-react"
-import api from "@/lib/api"
+import supabase from "@/lib/supabase"
 
 
 interface Food {
-  _id: string
+  id: string
   name: string
   description: string
   price: number
   category: string
   image: string
   rating: number
-  preparationTime?: number
+  preparation_time?: number
   availability: boolean
+  is_veg: boolean
 }
 
 export default function MenuPage() {
@@ -34,8 +35,14 @@ export default function MenuPage() {
   useEffect(() => {
     const fetchFoods = async () => {
       try {
-        const { data } = await api.get("/foods")
-        setFoods(data)
+        const { data, error } = await supabase
+          .from('foods')
+          .select('*')
+          .eq('availability', true)
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        setFoods(data || [])
       } catch (error) {
         console.error("Failed to fetch foods:", error)
       } finally {
@@ -43,6 +50,27 @@ export default function MenuPage() {
       }
     }
     fetchFoods()
+
+    // Real-time: auto-update menu when admin adds/edits/removes food
+    const channel = supabase
+      .channel('menu-foods')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'foods' },
+        async () => {
+          const { data } = await supabase
+            .from('foods')
+            .select('*')
+            .eq('availability', true)
+            .order('created_at', { ascending: false })
+          if (data) setFoods(data)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   const filteredFoods = foods.filter((food) => {
@@ -108,7 +136,7 @@ export default function MenuPage() {
         ) : filteredFoods.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredFoods.map((food) => (
-              <FoodCard key={food._id} food={food} />
+              <FoodCard key={food.id} food={food} />
             ))}
           </div>
         ) : (

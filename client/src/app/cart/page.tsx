@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import api from "@/lib/api"
+import supabase from "@/lib/supabase"
 import { useCart } from "@/context/cart-context"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -27,24 +27,32 @@ export default function CartPage() {
         return
       }
       try {
-        const [settingsRes, foodsRes] = await Promise.all([
-          api.get("/settings"),
-          api.get("/foods") // Public endpoint fetching active foods, but some might be availability: false
-        ])
-        const settingsData = settingsRes.data
-        setIsStoreOpen(settingsData.isStoreOpen ?? true)
-        setDeliveryFeeBase(settingsData.deliveryFee ?? 0)
-        setGstPercent(settingsData.gstPercent ?? 0)
-        setFreeDeliveryAbove(settingsData.freeDeliveryAbove ?? 0)
-        
-        const availableFoods = foodsRes.data
+        // Fetch settings
+        const { data: settingsData } = await supabase
+          .from('settings')
+          .select('*')
+          .single()
+
+        if (settingsData) {
+          setIsStoreOpen(settingsData.is_store_open ?? true)
+          setDeliveryFeeBase(settingsData.delivery_fee ?? 0)
+          setGstPercent(settingsData.gst_percent ?? 0)
+          setFreeDeliveryAbove(settingsData.free_delivery_above ?? 0)
+        }
+
+        // Fetch food availability
+        const foodIds = items.map(item => item.foodId)
+        const { data: foods } = await supabase
+          .from('foods')
+          .select('id, availability')
+          .in('id', foodIds)
+
         const outOfStockIds = items
-          .filter((cartItem) => {
-             const dbItem = availableFoods.find((f: { _id: string; availability: boolean }) => f._id === cartItem.foodId)
-             // If not found in DB at all, or availability is explicitly false
-             return !dbItem || dbItem.availability === false
+          .filter(cartItem => {
+            const dbItem = foods?.find(f => f.id === cartItem.foodId)
+            return !dbItem || dbItem.availability === false
           })
-          .map((item) => item.foodId)
+          .map(item => item.foodId)
           
         setUnavailableItems(outOfStockIds)
       } catch (err) {

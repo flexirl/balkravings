@@ -32,25 +32,27 @@ export default function ProfileInfoForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!user) return
     setLoading(true)
     setMessage(null)
 
     try {
-      const result = await profileAPI.updateProfile({
+      await profileAPI.updateProfile(user.id, {
         name: formData.name,
         phone: formData.phone,
       })
 
       updateUser({
-        name: result.name,
-        phone: result.phone,
+        name: formData.name,
+        phone: formData.phone,
       })
 
       setMessage({ type: 'success', text: 'Profile updated successfully!' })
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string }
       setMessage({
         type: 'error',
-        text: error.response?.data?.message || 'Failed to update profile',
+        text: err.message || 'Failed to update profile',
       })
     } finally {
       setLoading(false)

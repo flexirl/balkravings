@@ -35,17 +35,22 @@ export default function ChangePasswordForm() {
     setLoading(true)
 
     try {
-      await profileAPI.changePassword(formData.currentPassword, formData.newPassword)
-      setMessage({ type: 'success', text: 'Password changed successfully!' })
-      setFormData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-      })
-    } catch (error: any) {
+      const result = await profileAPI.changePassword(formData.newPassword)
+      if (result.error) {
+        setMessage({ type: 'error', text: result.error })
+      } else {
+        setMessage({ type: 'success', text: 'Password changed successfully!' })
+        setFormData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+        })
+      }
+    } catch (error: unknown) {
+      const err = error as { message?: string }
       setMessage({
         type: 'error',
-        text: error.response?.data?.message || 'Failed to change password',
+        text: err.message || 'Failed to change password',
       })
     } finally {
       setLoading(false)

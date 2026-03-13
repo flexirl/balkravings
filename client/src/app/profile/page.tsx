@@ -5,13 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/auth-context'
 import ProfileInfoForm from '@/components/profile-info-form'
 import AddressManagement from '@/components/address-management'
-import ChangePasswordForm from '@/components/change-password-form'
 import styles from './profile.module.css'
 
 export default function ProfilePage() {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'profile' | 'addresses' | 'password'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'addresses'>('profile')
 
   useEffect(() => {
     if (!loading && !user) {
@@ -49,18 +48,11 @@ export default function ProfilePage() {
           >
             Delivery Addresses
           </button>
-          <button
-            className={`${styles.tabBtn} ${activeTab === 'password' ? styles.active : ''}`}
-            onClick={() => setActiveTab('password')}
-          >
-            Change Password
-          </button>
         </div>
 
         <div className={styles.content}>
           {activeTab === 'profile' && <ProfileInfoForm />}
           {activeTab === 'addresses' && <AddressManagement />}
-          {activeTab === 'password' && <ChangePasswordForm />}
         </div>
       </div>
     </div>

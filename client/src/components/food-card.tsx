@@ -8,15 +8,15 @@ import { Clock, Plus } from "lucide-react"
 import Image from "next/image"
 
 interface Food {
-  _id: string
+  id: string
   name: string
   description: string
   price: number
   category: string
   image: string
   availability: boolean
-  preparationTime?: number
-  isVeg?: boolean
+  preparation_time?: number
+  is_veg?: boolean
 }
 
 export function FoodCard({ food }: { food: Food }) {
@@ -46,14 +46,14 @@ export function FoodCard({ food }: { food: Food }) {
 
         {/* Veg/Non-veg dot */}
         <div className="absolute top-3 left-3 bg-background/80 backdrop-blur-sm p-1 rounded-sm shadow-sm border border-border">
-          <div className={`w-3 h-3 rounded-full ${food.isVeg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+          <div className={`w-3 h-3 rounded-full ${food.is_veg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
         </div>
 
         {/* Prep time badge */}
-        {food.preparationTime && (
+        {food.preparation_time && (
           <div className="absolute top-3 right-3 flex items-center gap-1 glass rounded-full px-2.5 py-1">
             <Clock className="w-3 h-3 text-primary" />
-            <span className="text-xs text-muted-foreground">{food.preparationTime}m</span>
+            <span className="text-xs text-muted-foreground">{food.preparation_time}m</span>
           </div>
         )}
       </div>
@@ -81,7 +81,7 @@ export function FoodCard({ food }: { food: Food }) {
             }`}
             onClick={() =>
               addToCart({
-                foodId: food._id,
+                foodId: food.id,
                 name: food.name,
                 price: food.price,
                 image: food.image,

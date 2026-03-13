@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import api from "@/lib/api";
+import supabase from "@/lib/supabase";
 
 const galindo = Galindo({
   subsets: ["latin"],
@@ -37,12 +37,32 @@ export function Navbar() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const { data } = await api.get("/settings");
-        setIsStoreOpen(data.isStoreOpen ?? true);
-        setStoreOpensAt(data.storeOpensAt ?? null);
+        const { data } = await supabase.from('settings').select('*').single();
+        if (data) {
+          setIsStoreOpen(data.is_store_open ?? true);
+          setStoreOpensAt(data.store_opens_at ?? null);
+        }
       } catch {}
     };
     fetchSettings();
+
+    // Real-time: update store banner when admin changes settings
+    const channel = supabase
+      .channel('navbar-settings')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'settings' },
+        (payload) => {
+          const data = payload.new as { is_store_open?: boolean; store_opens_at?: string | null };
+          if (data.is_store_open !== undefined) setIsStoreOpen(data.is_store_open);
+          if (data.store_opens_at !== undefined) setStoreOpensAt(data.store_opens_at);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Cart bounce animation

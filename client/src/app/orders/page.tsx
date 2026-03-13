@@ -4,17 +4,18 @@ import { useEffect, useState } from "react"
 import { useAuth } from "@/context/auth-context"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Package } from "lucide-react"
-import api from "@/lib/api"
+import supabase from "@/lib/supabase"
 import { toast } from "sonner"
 
 interface OrderItem { name: string; quantity: number; price: number }
 interface Order {
-  _id: string
+  id: string
   items: OrderItem[]
-  totalAmount: number
-  paymentStatus: string
-  orderStatus: string
-  createdAt: string
+  total_amount: number
+  payment_status: string
+  order_status: string
+  created_at: string
+  order_items: OrderItem[]
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -32,10 +33,19 @@ export default function OrdersPage() {
 
   useEffect(() => {
     const fetchOrders = async () => {
-      if (!user) return
+      if (!user) {
+        setLoading(false)
+        return
+      }
       try {
-        const { data } = await api.get("/orders/my")
-        setOrders(data)
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        setOrders(data || [])
       } catch {
         toast.error("Failed to load orders")
       } finally {
@@ -43,6 +53,38 @@ export default function OrdersPage() {
       }
     }
     fetchOrders()
+  }, [user])
+
+  // Real-time order status updates
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase
+      .channel('my-orders')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          setOrders(prev =>
+            prev.map(order =>
+              order.id === payload.new.id
+                ? { ...order, ...payload.new }
+                : order
+            )
+          )
+          toast.info(`Order status: ${(payload.new as { order_status: string }).order_status.replace(/-/g, ' ')}`)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [user])
 
   if (loading) {
@@ -69,22 +111,22 @@ export default function OrdersPage() {
       ) : (
         <div className="space-y-4">
           {orders.map((order) => (
-            <div key={order._id} className="p-6 rounded-2xl bg-card border border-border hover:border-border/80 transition-all">
+            <div key={order.id} className="p-6 rounded-2xl bg-card border border-border hover:border-border/80 transition-all">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="font-semibold">Order #{order._id.slice(-6).toUpperCase()}</p>
+                  <p className="font-semibold">Order #{order.id.slice(-6).toUpperCase()}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {new Date(order.createdAt).toLocaleDateString("en-US", {
+                    {new Date(order.created_at).toLocaleDateString("en-US", {
                       year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit",
                     })}
                   </p>
                 </div>
-                <Badge variant="outline" className={`${STATUS_STYLES[order.orderStatus] || ""} border rounded-lg px-3 py-1`}>
-                  {order.orderStatus.replace(/-/g, " ").toUpperCase()}
+                <Badge variant="outline" className={`${STATUS_STYLES[order.order_status] || ""} border rounded-lg px-3 py-1`}>
+                  {order.order_status.replace(/-/g, " ").toUpperCase()}
                 </Badge>
               </div>
               <div className="space-y-2 mb-4">
-                {order.items.map((item, idx) => (
+                {(order.order_items || []).map((item, idx) => (
                   <div key={idx} className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{item.quantity}× {item.name}</span>
                     <span>₹{(item.price * item.quantity).toFixed(0)}</span>
@@ -93,7 +135,7 @@ export default function OrdersPage() {
               </div>
               <div className="pt-4 border-t border-border flex justify-between font-bold">
                 <span>Total</span>
-                <span className="text-primary">₹{order.totalAmount.toFixed(0)}</span>
+                <span className="text-primary">₹{Number(order.total_amount).toFixed(0)}</span>
               </div>
             </div>
           ))}

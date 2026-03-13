@@ -5,7 +5,7 @@ import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Product {
-  _id: string;
+  id: string;
   image: string;
   name: string;
   description: string;
@@ -16,7 +16,7 @@ interface Product {
 
 const products: Product[] = [
   {
-    _id: "p1",
+    id: "p1",
     image: "/biryanicoke.png",
     name: "Biryani Coke Combo",
     description:
@@ -26,7 +26,7 @@ const products: Product[] = [
     badgeText: "Student Favorite",
   },
   {
-    _id: "p2",
+    id: "p2",
     image: "/aalocurd.png",
     name: "Two Paratha with Curd",
     description:
@@ -36,7 +36,7 @@ const products: Product[] = [
     badgeText: "Top Rated",
   },
   {
-    _id: "p3",
+    id: "p3",
     image: "/friedricecombo1.png",
     name: "Fried Rice with Chicken Chilli/Paneer Chilli",
     description:
@@ -135,7 +135,7 @@ export function BestSellersSection() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-8 lg:gap-12 w-full mb-12 md:mb-16">
           {products.map((product) => (
-            <div key={product._id} className="flex justify-center">
+            <div key={product.id} className="flex justify-center">
               <ProductCard product={product} />
             </div>
           ))}

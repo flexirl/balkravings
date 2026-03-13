@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { io as ioClient, Socket } from "socket.io-client"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,29 +9,31 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import api from "@/lib/api"
-import { AxiosError } from "axios"
+import supabase from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
+import { useAdminTab } from "./layout"
 
 interface AppSettings {
-  deliveryFee: number
-  gstPercent: number
-  freeDeliveryAbove: number
-  isStoreOpen: boolean
-  storeOpensAt: string | null
+  id?: string
+  delivery_fee: number
+  gst_percent: number
+  free_delivery_above: number
+  is_store_open: boolean
+  store_opens_at: string | null
 }
 
 interface Coupon {
-  _id: string
+  id: string
   code: string
-  discountType: "percent" | "flat"
-  discountValue: number
-  minOrder: number
-  maxDiscount: number
-  usageLimit: number
-  usedCount: number
-  isActive: boolean
-  expiresAt: string | null
+  discount_type: "percent" | "flat"
+  discount_value: number
+  min_order: number
+  max_discount: number
+  usage_limit: number
+  used_count: number
+  is_active: boolean
+  expires_at: string | null
 }
 import {
   Package,
@@ -50,29 +51,29 @@ import {
 } from "lucide-react"
 
 interface Food {
-  _id: string
+  id: string
   name: string
   description: string
   price: number
   category: string
   image: string
   availability: boolean
-  isVeg?: boolean
-  preparationTime?: number
+  is_veg?: boolean
+  preparation_time?: number
 }
 
+interface OrderItem { name: string; quantity: number; price: number }
 interface Order {
-  _id: string
-  customerName: string
-  customerPhone: string
-  items: { name: string; quantity: number; price: number }[]
-  totalAmount: number
-  paymentStatus: string
-  orderStatus: string
-  paymentMethod: string
-  createdAt: string
-  userId?: { name: string; email: string }
-  deliveryAddress?: string
+  id: string
+  customer_name: string
+  customer_phone: string
+  order_items: OrderItem[]
+  total_amount: number
+  payment_status: string
+  order_status: string
+  payment_method: string
+  created_at: string
+  delivery_address?: string
 }
 
 interface Stats {
@@ -88,7 +89,7 @@ interface Stats {
 export default function AdminDashboard() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<"dashboard" | "foods" | "orders" | "settings" | "coupons">("dashboard")
+  const { activeTab, setActiveTab } = useAdminTab()
 
   // Stats
   const [stats, setStats] = useState<Stats | null>(null)
@@ -109,8 +110,8 @@ export default function AdminDashboard() {
     description: "",
     price: "",
     category: "",
-    preparationTime: "",
-    isVeg: "true",
+    preparation_time: "",
+    is_veg: "true",
   })
 
   // Orders
@@ -118,7 +119,7 @@ export default function AdminDashboard() {
   const [ordersLoading, setOrdersLoading] = useState(true)
 
   // Settings
-  const [appSettings, setAppSettings] = useState<AppSettings>({ deliveryFee: 40, gstPercent: 5, freeDeliveryAbove: 0, isStoreOpen: true, storeOpensAt: null })
+  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, gst_percent: 5, free_delivery_above: 0, is_store_open: true, store_opens_at: null })
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
 
@@ -144,74 +145,129 @@ export default function AdminDashboard() {
     }
   }, [user, authLoading, router])
 
-  // Fetch stats once on load
+  // Fetch stats via Supabase
   useEffect(() => {
+    if (authLoading) return
     const fetchStats = async () => {
+      setStatsLoading(true)
       try {
-        const { data } = await api.get("/admin/stats")
-        setStats(data)
+        const [ordersResult, foodsResult, usersResult] = await Promise.all([
+          supabase.from('orders').select('id, total_amount, payment_status'),
+          supabase.from('foods').select('id', { count: 'exact', head: true }),
+          supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        ])
+
+        const allOrders = ordersResult.data || []
+        const paidOrders = allOrders.filter(o => o.payment_status === 'paid')
+        const totalRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total_amount), 0)
+
+        // Fetch recent orders with items
+        const { data: recentOrders } = await supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        setStats({
+          totalOrders: allOrders.length,
+          totalFoods: foodsResult.count || 0,
+          totalUsers: usersResult.count || 0,
+          totalRevenue,
+          recentOrders: recentOrders || [],
+        })
       } catch { /* ignore */ } finally {
         setStatsLoading(false)
       }
     }
     if (user?.role === "admin") fetchStats()
-  }, [user])
+  }, [user, authLoading])
 
-  // Fetch foods (admin sees all including unavailable)
+  // Fetch all foods (admin sees unavailable too)
   useEffect(() => {
+    if (authLoading) return
     const fetchFoods = async () => {
+      setFoodsLoading(true)
       try {
-        const { data } = await api.get("/foods?all=true")
-        setFoods(data)
+        const { data, error } = await supabase
+          .from('foods')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (error) throw error
+        setFoods(data || [])
       } catch { /* ignore */ } finally {
         setFoodsLoading(false)
       }
     }
     if (user?.role === "admin") fetchFoods()
-  }, [user])
+  }, [user, authLoading])
 
-  // Fetch orders once + WebSocket real-time updates
-  const socketRef = useRef<Socket | null>(null)
-
+  // Fetch orders + Supabase Realtime for new/updated orders
   useEffect(() => {
-    if (user?.role !== "admin") return
+    if (authLoading || user?.role !== "admin") return
 
-    // Initial fetch
     const fetchOrders = async () => {
       try {
-        const { data } = await api.get("/orders")
-        setOrders(data)
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('created_at', { ascending: false })
+        if (error) throw error
+        setOrders(data || [])
       } catch { /* ignore */ } finally {
         setOrdersLoading(false)
       }
     }
     fetchOrders()
 
-    // Connect to WebSocket using the environment API URL
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
-    const socketUrl = apiUrl.replace(/\/api\/?$/, "")
-    const socket = ioClient(socketUrl)
-    socketRef.current = socket
-
-    socket.on("connect", () => {
-      socket.emit("join-admin")
-    })
-
-    socket.on("new-order", (order: Order) => {
-      setOrders((prev) => [order, ...prev])
-      // Refresh stats when new order arrives
-      api.get("/admin/stats").then(({ data }) => setStats(data)).catch(() => {})
-      toast.success(`🔔 New order from ${order.customerName || "Customer"}!`)
-    })
-
-    socket.on("order-updated", (updatedOrder: Order) => {
-      setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)))
-    })
+    // Real-time: listen for new & updated orders + foods
+    const channel = supabase
+      .channel('admin-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'orders' },
+        async (payload) => {
+          const { data: newOrder } = await supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .eq('id', payload.new.id)
+            .single()
+          if (newOrder) {
+            setOrders((prev) => [newOrder, ...prev])
+            // Update stats
+            setStats((prev) => prev ? {
+              ...prev,
+              totalOrders: prev.totalOrders + 1,
+              totalRevenue: newOrder.payment_status === 'paid'
+                ? prev.totalRevenue + Number(newOrder.total_amount)
+                : prev.totalRevenue,
+              recentOrders: [newOrder, ...prev.recentOrders].slice(0, 5),
+            } : prev)
+            toast.success(`🔔 New order from ${newOrder.customer_name || "Customer"}!`)
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders' },
+        (payload) => {
+          setOrders((prev) => prev.map((o) => (o.id === payload.new.id ? { ...o, ...payload.new } : o)))
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'foods' },
+        async () => {
+          // Refresh foods list when any food is added/updated/deleted
+          const { data } = await supabase.from('foods').select('*').order('created_at', { ascending: false })
+          if (data) setFoods(data)
+        }
+      )
+      .subscribe()
 
     return () => {
-      socket.disconnect()
+      supabase.removeChannel(channel)
     }
-  }, [user])
+  }, [user, authLoading])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -230,16 +286,16 @@ export default function AdminDashboard() {
 
     setAddLoading(true)
     try {
-      let imageUrl = imagePreview; // Default to existing preview if no new file is uploaded
-      
-      // Upload new image if selected
+      let imageUrl = imagePreview
+
+      // Upload new image if selected (still via Express/Cloudinary)
       if (imageFile) {
         const formData = new FormData()
         formData.append("image", imageFile)
         const { data: uploadData } = await api.post("/upload", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         })
-        imageUrl = uploadData.url;
+        imageUrl = uploadData.url
       }
 
       const payload = {
@@ -248,64 +304,66 @@ export default function AdminDashboard() {
         price: parseFloat(newFood.price),
         category: newFood.category,
         image: imageUrl,
-        isVeg: newFood.isVeg === "true",
-        preparationTime: newFood.preparationTime ? parseInt(newFood.preparationTime) : undefined,
-      };
-
-      if (editFoodId) {
-        // Edit Existing
-        const { data: updatedFood } = await api.put(`/foods/${editFoodId}`, payload)
-        setFoods((prev) => prev.map(f => f._id === editFoodId ? updatedFood : f))
-        toast.success("Food item updated!")
-      } else {
-        // Create New
-        const { data: food } = await api.post("/foods", payload)
-        setFoods((prev) => [food, ...prev])
-        toast.success("Food item added!")
-        
-        // Refresh stats
-        const { data: newStats } = await api.get("/admin/stats")
-        setStats(newStats)
+        is_veg: newFood.is_veg === "true",
+        preparation_time: newFood.preparation_time ? parseInt(newFood.preparation_time) : null,
       }
 
-      setNewFood({ name: "", description: "", price: "", category: "", preparationTime: "", isVeg: "true" })
+      if (editFoodId) {
+        const { data: updatedFood, error } = await supabase
+          .from('foods')
+          .update(payload)
+          .eq('id', editFoodId)
+          .select()
+          .single()
+        if (error) throw error
+        setFoods((prev) => prev.map(f => f.id === editFoodId ? updatedFood : f))
+        toast.success("Food item updated!")
+      } else {
+        const { data: food, error } = await supabase
+          .from('foods')
+          .insert(payload)
+          .select()
+          .single()
+        if (error) throw error
+        setFoods((prev) => [food, ...prev])
+        toast.success("Food item added!")
+      }
+
+      setNewFood({ name: "", description: "", price: "", category: "", preparation_time: "", is_veg: "true" })
       setImageFile(null)
       setImagePreview("")
       setEditFoodId(null)
       setShowAddForm(false)
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<{ message?: string }>
-      toast.error(axiosError.response?.data?.message || "Failed to add food item")
+      const err = error as { message?: string }
+      toast.error(err.message || "Failed to save food item")
     } finally {
       setAddLoading(false)
     }
   }
 
   const handleEditClick = (food: Food) => {
-    setEditFoodId(food._id)
+    setEditFoodId(food.id)
     setNewFood({
       name: food.name,
       description: food.description,
       price: food.price.toString(),
       category: food.category,
-      preparationTime: food.preparationTime?.toString() || "",
-      isVeg: food.isVeg !== false ? "true" : "false",
+      preparation_time: food.preparation_time?.toString() || "",
+      is_veg: food.is_veg !== false ? "true" : "false",
     })
     setImagePreview(food.image)
     setShowAddForm(true)
-    
-    // Scroll to top where the form is
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleDeleteFood = async (id: string) => {
     if (!confirm("Are you sure you want to delete this item?")) return
     try {
-      await api.delete(`/foods/${id}`)
-      setFoods((prev) => prev.filter((f) => f._id !== id))
+      const { error } = await supabase.from('foods').delete().eq('id', id)
+      if (error) throw error
+      setFoods((prev) => prev.filter((f) => f.id !== id))
       toast.success("Food item deleted")
-      const { data: newStats } = await api.get("/admin/stats")
-      setStats(newStats)
     } catch {
       toast.error("Failed to delete food item")
     }
@@ -313,9 +371,13 @@ export default function AdminDashboard() {
 
   const handleToggleFoodAvailability = async (id: string, currentAvailability: boolean) => {
     try {
-      await api.put(`/foods/${id}`, { availability: !currentAvailability })
+      const { error } = await supabase
+        .from('foods')
+        .update({ availability: !currentAvailability })
+        .eq('id', id)
+      if (error) throw error
       setFoods((prev) =>
-        prev.map((f) => (f._id === id ? { ...f, availability: !currentAvailability } : f))
+        prev.map((f) => (f.id === id ? { ...f, availability: !currentAvailability } : f))
       )
       toast.success(currentAvailability ? "Marked Out of Stock" : "Marked In Stock")
     } catch {
@@ -323,20 +385,17 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleToggleAvailability = async (id: string, current: boolean) => {
-    try {
-      const { data } = await api.put(`/foods/${id}`, { availability: !current })
-      setFoods((prev) => prev.map((f) => (f._id === id ? data : f)))
-    } catch {
-      toast.error("Failed to update")
-    }
-  }
-
   const handleUpdateOrderStatus = async (id: string, orderStatus: string) => {
     try {
-      const paymentStatus = orderStatus === 'delivered' ? 'paid' : undefined
-      const { data } = await api.put(`/orders/${id}/status`, { orderStatus, ...(paymentStatus ? { paymentStatus } : {}) })
-      setOrders((prev) => prev.map((o) => (o._id === id ? data : o)))
+      const updates: Record<string, string> = { order_status: orderStatus }
+      if (orderStatus === 'delivered') updates.payment_status = 'paid'
+
+      const { error } = await supabase
+        .from('orders')
+        .update(updates)
+        .eq('id', id)
+      if (error) throw error
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)))
       toast.success(`Order status updated to ${orderStatus}`)
     } catch {
       toast.error("Failed to update order")
@@ -348,8 +407,9 @@ export default function AdminDashboard() {
     const fetchSettings = async () => {
       setSettingsLoading(true)
       try {
-        const { data } = await api.get("/settings")
-        setAppSettings(data)
+        const { data, error } = await supabase.from('settings').select('*').single()
+        if (error) throw error
+        if (data) setAppSettings(data)
       } catch { /* ignore */ } finally {
         setSettingsLoading(false)
       }
@@ -361,8 +421,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchCoupons = async () => {
       try {
-        const { data } = await api.get("/coupons")
-        setCoupons(data)
+        const { data, error } = await supabase
+          .from('coupons')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (error) throw error
+        setCoupons(data || [])
       } catch { /* ignore */ } finally {
         setCouponsLoading(false)
       }
@@ -381,8 +445,15 @@ export default function AdminDashboard() {
   const handleSaveSettings = async () => {
     setSettingsSaving(true)
     try {
-      const { data } = await api.put("/settings", appSettings)
-      setAppSettings(data)
+      const { id, ...settingsWithoutId } = appSettings
+      const { data, error } = await supabase
+        .from('settings')
+        .update(settingsWithoutId)
+        .eq('id', id || '')
+        .select()
+        .single()
+      if (error) throw error
+      if (data) setAppSettings(data)
       toast.success("Settings saved!")
     } catch {
       toast.error("Failed to save settings")
@@ -395,22 +466,27 @@ export default function AdminDashboard() {
     e.preventDefault()
     setCouponSaving(true)
     try {
-      const { data } = await api.post("/coupons", {
-        code: newCoupon.code,
-        discountType: newCoupon.discountType,
-        discountValue: parseFloat(newCoupon.discountValue),
-        minOrder: newCoupon.minOrder ? parseFloat(newCoupon.minOrder) : 0,
-        maxDiscount: newCoupon.maxDiscount ? parseFloat(newCoupon.maxDiscount) : 0,
-        usageLimit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 0,
-        expiresAt: newCoupon.expiresAt || null,
-      })
+      const { data, error } = await supabase
+        .from('coupons')
+        .insert({
+          code: newCoupon.code.toUpperCase(),
+          discount_type: newCoupon.discountType,
+          discount_value: parseFloat(newCoupon.discountValue),
+          min_order: newCoupon.minOrder ? parseFloat(newCoupon.minOrder) : 0,
+          max_discount: newCoupon.maxDiscount ? parseFloat(newCoupon.maxDiscount) : 0,
+          usage_limit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 0,
+          expires_at: newCoupon.expiresAt || null,
+        })
+        .select()
+        .single()
+      if (error) throw error
       setCoupons((prev) => [data, ...prev])
       setNewCoupon({ code: "", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "" })
       setShowCouponForm(false)
       toast.success("Coupon created!")
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<{ message?: string }>
-      toast.error(axiosError.response?.data?.message || "Failed to create coupon")
+      const err = error as { message?: string }
+      toast.error(err.message || "Failed to create coupon")
     } finally {
       setCouponSaving(false)
     }
@@ -419,37 +495,31 @@ export default function AdminDashboard() {
   const handleDeleteCoupon = async (id: string) => {
     if (!confirm("Delete this coupon?")) return
     try {
-      await api.delete(`/coupons/${id}`)
-      setCoupons((prev) => prev.filter((c) => c._id !== id))
+      const { error } = await supabase.from('coupons').delete().eq('id', id)
+      if (error) throw error
+      setCoupons((prev) => prev.filter((c) => c.id !== id))
       toast.success("Coupon deleted")
     } catch {
       toast.error("Failed to delete coupon")
     }
   }
 
-  const TABS = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "foods", label: "Food Items" },
-    { key: "orders", label: "Orders" },
-    { key: "settings", label: "Settings" },
-    { key: "coupons", label: "Coupons" },
-  ] as const
-
   return (
     <div className="space-y-6">
-      {/* Tab Navigation */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {TABS.map((tab) => (
+
+      {/* Mobile Tab Navigation — only shows on small screens */}
+      <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
+        {(["dashboard", "orders", "foods", "settings", "coupons"] as const).map((tab) => (
           <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            key={tab}
+            onClick={() => setActiveTab(tab)}
             className={`px-5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-              activeTab === tab.key
+              activeTab === tab
                 ? "bg-primary text-primary-foreground"
                 : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
-            {tab.label}
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -501,17 +571,17 @@ export default function AdminDashboard() {
                   ) : (
                     <div className="space-y-4">
                       {stats.recentOrders.slice(0, 5).map((order) => (
-                        <div key={order._id} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
+                        <div key={order.id} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
                           <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-                            {(order.customerName || "?").charAt(0).toUpperCase()}
+                            {(order.customer_name || "?").charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{order.customerName || "Customer"}</p>
+                            <p className="text-sm font-medium truncate">{order.customer_name || "Customer"}</p>
                             <p className="text-xs text-muted-foreground">
-                              {order.items.length} items · {order.paymentMethod === "cod" ? "COD" : "Online"} · {order.orderStatus}
+                              {(order.order_items || []).length} items · {order.payment_method === "cod" ? "COD" : "Online"} · {order.order_status}
                             </p>
                           </div>
-                          <span className="text-sm font-semibold text-green-400">₹{order.totalAmount}</span>
+                          <span className="text-sm font-semibold text-green-400">₹{Number(order.total_amount)}</span>
                         </div>
                       ))}
                     </div>
@@ -536,7 +606,7 @@ export default function AdminDashboard() {
                 if (showAddForm) {
                   setShowAddForm(false)
                   setEditFoodId(null)
-                  setNewFood({ name: "", description: "", price: "", category: "", preparationTime: "", isVeg: "true" })
+                  setNewFood({ name: "", description: "", price: "", category: "", preparation_time: "", is_veg: "true" })
                   setImageFile(null)
                   setImagePreview("")
                 } else {
@@ -607,16 +677,16 @@ export default function AdminDashboard() {
                       <Input
                         type="number"
                         placeholder="20"
-                        value={newFood.preparationTime}
-                        onChange={(e) => setNewFood({ ...newFood, preparationTime: e.target.value })}
+                        value={newFood.preparation_time}
+                        onChange={(e) => setNewFood({ ...newFood, preparation_time: e.target.value })}
                         className="h-10 rounded-xl bg-secondary border-border"
                       />
                     </div>
                     <div className="space-y-2">
                        <Label className="text-sm">Type</Label>
                        <select
-                         value={newFood.isVeg}
-                         onChange={(e) => setNewFood({ ...newFood, isVeg: e.target.value })}
+                         value={newFood.is_veg}
+                         onChange={(e) => setNewFood({ ...newFood, is_veg: e.target.value })}
                          className="w-full h-10 rounded-xl bg-secondary border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                        >
                          <option value="true">Veg</option>
@@ -675,7 +745,7 @@ export default function AdminDashboard() {
             <div className="grid gap-4">
               {foods.map((food) => (
                 <div
-                  key={food._id}
+                  key={food.id}
                   className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border hover:border-border/80 transition-colors"
                 >
                   <div className="relative h-16 w-16 rounded-xl overflow-hidden border border-border flex-shrink-0">
@@ -685,7 +755,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-lg truncate flex-1">{food.name}</h3>
                           <button
-                            onClick={() => handleToggleFoodAvailability(food._id, food.availability)}
+                            onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
                             className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 transition-colors ${
                               food.availability
                                 ? "bg-green-500/10 text-green-400 hover:bg-green-500/20"
@@ -697,9 +767,9 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex flex-wrap items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1.5 bg-secondary px-2.5 py-1 rounded-lg text-primary font-medium border border-border">{food.category}</span>
-                          <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium border border-border ${food.isVeg !== false ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                            <div className={`w-2 h-2 rounded-full ${food.isVeg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
-                            {food.isVeg !== false ? 'Veg' : 'Non-Veg'}
+                          <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium border border-border ${food.is_veg !== false ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                            <div className={`w-2 h-2 rounded-full ${food.is_veg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                            {food.is_veg !== false ? 'Veg' : 'Non-Veg'}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">{food.description}</p>
@@ -710,7 +780,7 @@ export default function AdminDashboard() {
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 rounded-lg"
-                      onClick={() => handleToggleAvailability(food._id, food.availability)}
+                      onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
                       title={food.availability ? "Mark unavailable" : "Mark available"}
                     >
                       {food.availability ? <Eye className="h-4 w-4 text-green-400" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
@@ -728,7 +798,7 @@ export default function AdminDashboard() {
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDeleteFood(food._id)}
+                      onClick={() => handleDeleteFood(food.id)}
                       title="Delete food"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -761,75 +831,67 @@ export default function AdminDashboard() {
           ) : (
             <div className="space-y-4">
               {orders.map((order) => (
-                <Card key={order._id} className="bg-card border-border">
+                <Card key={order.id} className="bg-card border-border">
                   <CardContent className="pt-5 pb-4">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       <div className="flex-1">
-                        {/* User account info */}
+                        {/* Customer info */}
                         <div className="flex items-center gap-3 mb-3">
                           <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
-                            {(order.userId?.name || order.customerName || "?").charAt(0).toUpperCase()}
+                            {(order.customer_name || "?").charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-semibold truncate">
-                              {order.userId?.name || order.customerName || "Guest"}
+                              {order.customer_name || "Guest"}
                             </p>
-                            {order.userId?.email && (
-                              <p className="text-xs text-muted-foreground truncate">{order.userId.email}</p>
-                            )}
                           </div>
                         </div>
 
                         {/* Delivery & payment info */}
                         <div className="flex items-center gap-2 flex-wrap ml-12">
-                          {order.customerName && order.userId?.name && order.customerName !== order.userId.name && (
-                            <span className="text-xs px-2 py-0.5 rounded-lg bg-secondary text-muted-foreground">
-                              Delivery: {order.customerName}
-                            </span>
+                          {order.customer_phone && (
+                            <span className="text-xs text-muted-foreground">📞 {order.customer_phone}</span>
                           )}
-                          {order.customerPhone && (
-                            <span className="text-xs text-muted-foreground">📞 {order.customerPhone}</span>
-                          )}
-                          {order.deliveryAddress && (
-                            <span className="text-xs text-muted-foreground mr-2">📍 {order.deliveryAddress}</span>
+                          {order.delivery_address && (
+                            <span className="text-xs text-muted-foreground mr-2">📍 {order.delivery_address}</span>
                           )}
                           <span className={`text-xs px-2 py-0.5 rounded-lg ${
-                            order.paymentMethod === "cod"
+                            order.payment_method === "cod"
                               ? "bg-yellow-500/10 text-yellow-400"
                               : "bg-blue-500/10 text-blue-400"
                           }`}>
-                            {order.paymentMethod === "cod" ? "COD" : "Online"}
+                            {order.payment_method === "cod" ? "COD" : "Online"}
                           </span>
                           <span className={`text-xs px-2 py-0.5 rounded-lg ${
-                            order.paymentStatus === "paid"
+                            order.payment_status === "paid"
                               ? "bg-green-500/10 text-green-400"
                               : "bg-orange-500/10 text-orange-400"
                           }`}>
-                            {order.paymentStatus}
+                            {order.payment_status}
                           </span>
                         </div>
 
                         {/* Order items */}
                         <div className="mt-3 ml-12 space-y-1">
-                          {order.items.map((item, i) => (
+                          {(order.order_items || []).map((item, i) => (
                             <p key={i} className="text-xs text-muted-foreground">
                               {item.quantity}× {item.name} — ₹{item.price * item.quantity}
                             </p>
                           ))}
                         </div>
                         <p className="text-xs text-muted-foreground mt-2 ml-12">
-                          {new Date(order.createdAt).toLocaleString("en-IN")}
+                          {new Date(order.created_at).toLocaleString("en-IN")}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                        <span className="font-bold text-primary">₹{order.totalAmount}</span>
+                        <span className="font-bold text-primary">₹{Number(order.total_amount)}</span>
                         <select
-                          value={order.orderStatus}
-                          onChange={(e) => handleUpdateOrderStatus(order._id, e.target.value)}
+                          value={order.order_status}
+                          onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
                           className={`text-xs px-3 py-1.5 rounded-lg border bg-secondary border-border ${
-                            order.orderStatus === "delivered"
+                            order.order_status === "delivered"
                               ? "text-green-400"
-                              : order.orderStatus === "cancelled"
+                              : order.order_status === "cancelled"
                               ? "text-destructive"
                               : "text-foreground"
                           }`}
@@ -876,39 +938,43 @@ export default function AdminDashboard() {
                             <input
                               type="checkbox"
                               className="sr-only peer"
-                              checked={appSettings.isStoreOpen}
+                              checked={appSettings.is_store_open}
                               onChange={async (e) => {
                                 const newStatus = e.target.checked
-                                setAppSettings({ ...appSettings, isStoreOpen: newStatus })
+                                setAppSettings({ ...appSettings, is_store_open: newStatus })
                                 try {
-                                  await api.put("/settings", { ...appSettings, isStoreOpen: newStatus })
+                                  const { error } = await supabase
+                                    .from('settings')
+                                    .update({ is_store_open: newStatus })
+                                    .eq('id', appSettings.id || '')
+                                  if (error) throw error
                                   toast.success(`Store is now ${newStatus ? 'Open' : 'Closed'}`)
                                 } catch {
                                   toast.error("Failed to update store status")
-                                  setAppSettings({ ...appSettings, isStoreOpen: !newStatus })
+                                  setAppSettings({ ...appSettings, is_store_open: !newStatus })
                                 }
                               }}
                             />
                             <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
                           </label>
-                          <span className={`font-medium ${appSettings.isStoreOpen ? "text-green-400" : "text-destructive"}`}>
-                            {appSettings.isStoreOpen ? "Accepting Orders" : "Closed"}
+                          <span className={`font-medium ${appSettings.is_store_open ? "text-green-400" : "text-destructive"}`}>
+                            {appSettings.is_store_open ? "Accepting Orders" : "Closed"}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mr-4">
-                          {appSettings.isStoreOpen
+                          {appSettings.is_store_open
                             ? "Toggle to immediately stop accepting new orders across the platform."
                             : "The store is currently closed. Users cannot place new orders."}
                         </p>
                       </div>
 
-                      {!appSettings.isStoreOpen && (
+                      {!appSettings.is_store_open && (
                         <div className="shrink-0 space-y-2">
                           <Label className="text-xs">Opening At (Optional Countdown)</Label>
                           <Input
                             type="datetime-local"
-                            value={appSettings.storeOpensAt ? new Date(appSettings.storeOpensAt).toISOString().slice(0, 16) : ""}
-                            onChange={(e) => setAppSettings({ ...appSettings, storeOpensAt: e.target.value || null })}
+                            value={appSettings.store_opens_at ? new Date(appSettings.store_opens_at).toISOString().slice(0, 16) : ""}
+                            onChange={(e) => setAppSettings({ ...appSettings, store_opens_at: e.target.value || null })}
                             className="h-9 rounded-lg bg-background border-border text-sm"
                           />
                         </div>
@@ -927,8 +993,8 @@ export default function AdminDashboard() {
                       <Input
                         type="number"
                         min="0"
-                        value={appSettings.deliveryFee}
-                        onChange={(e) => setAppSettings({ ...appSettings, deliveryFee: parseFloat(e.target.value) || 0 })}
+                        value={appSettings.delivery_fee}
+                        onChange={(e) => setAppSettings({ ...appSettings, delivery_fee: parseFloat(e.target.value) || 0 })}
                         className="h-10 rounded-xl bg-secondary border-border"
                       />
                     </div>
@@ -938,8 +1004,8 @@ export default function AdminDashboard() {
                         type="number"
                         min="0"
                         max="100"
-                        value={appSettings.gstPercent}
-                        onChange={(e) => setAppSettings({ ...appSettings, gstPercent: parseFloat(e.target.value) || 0 })}
+                        value={appSettings.gst_percent}
+                        onChange={(e) => setAppSettings({ ...appSettings, gst_percent: parseFloat(e.target.value) || 0 })}
                         className="h-10 rounded-xl bg-secondary border-border"
                       />
                     </div>
@@ -949,8 +1015,8 @@ export default function AdminDashboard() {
                         type="number"
                         min="0"
                         placeholder="0 = disabled"
-                        value={appSettings.freeDeliveryAbove}
-                        onChange={(e) => setAppSettings({ ...appSettings, freeDeliveryAbove: parseFloat(e.target.value) || 0 })}
+                        value={appSettings.free_delivery_above}
+                        onChange={(e) => setAppSettings({ ...appSettings, free_delivery_above: parseFloat(e.target.value) || 0 })}
                         className="h-10 rounded-xl bg-secondary border-border"
                       />
                       <p className="text-[11px] text-muted-foreground">Set to 0 to always charge delivery fee</p>
@@ -1103,7 +1169,7 @@ export default function AdminDashboard() {
             <div className="grid gap-4">
               {coupons.map((coupon) => (
                 <div
-                  key={coupon._id}
+                  key={coupon.id}
                   className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border hover:border-border/80 transition-colors"
                 >
                   <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -1112,23 +1178,23 @@ export default function AdminDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h4 className="font-semibold text-sm font-mono">{coupon.code}</h4>
-                      <span className={`text-xs px-2 py-0.5 rounded-lg ${coupon.isActive ? "bg-green-500/10 text-green-400" : "bg-destructive/10 text-destructive"}`}>
-                        {coupon.isActive ? "Active" : "Inactive"}
+                      <span className={`text-xs px-2 py-0.5 rounded-lg ${coupon.is_active ? "bg-green-500/10 text-green-400" : "bg-destructive/10 text-destructive"}`}>
+                        {coupon.is_active ? "Active" : "Inactive"}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {coupon.discountType === "percent" ? `${coupon.discountValue}% off` : `₹${coupon.discountValue} off`}
-                      {coupon.minOrder > 0 && ` · Min ₹${coupon.minOrder}`}
-                      {coupon.maxDiscount > 0 && ` · Max ₹${coupon.maxDiscount}`}
-                      {coupon.usageLimit > 0 && ` · ${coupon.usedCount}/${coupon.usageLimit} used`}
-                      {coupon.expiresAt && ` · Expires ${new Date(coupon.expiresAt).toLocaleDateString("en-IN")}`}
+                      {coupon.discount_type === "percent" ? `${coupon.discount_value}% off` : `₹${coupon.discount_value} off`}
+                      {coupon.min_order > 0 && ` · Min ₹${coupon.min_order}`}
+                      {coupon.max_discount > 0 && ` · Max ₹${coupon.max_discount}`}
+                      {coupon.usage_limit > 0 && ` · ${coupon.used_count}/${coupon.usage_limit} used`}
+                      {coupon.expires_at && ` · Expires ${new Date(coupon.expires_at).toLocaleDateString("en-IN")}`}
                     </p>
                   </div>
                   <Button
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 rounded-lg text-destructive hover:text-destructive"
-                    onClick={() => handleDeleteCoupon(coupon._id)}
+                    onClick={() => handleDeleteCoupon(coupon.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
