@@ -1,9 +1,8 @@
 "use client"
 
 import { useAuth } from "@/context/auth-context"
-import { useRouter } from "next/navigation"
-import { useEffect, createContext, useContext, useState } from "react"
-import { usePathname } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useEffect, createContext, useContext, useState, Suspense } from "react"
 import { LayoutDashboard, ShoppingBag, UtensilsCrossed, ChefHat, Settings, Tag } from "lucide-react"
 
 export type AdminTab = "dashboard" | "orders" | "foods" | "settings" | "coupons"
@@ -28,10 +27,34 @@ const NAV_ITEMS: { tab: AdminTab; label: string; icon: typeof LayoutDashboard }[
   { tab: "coupons", label: "Coupons", icon: Tag },
 ]
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+const VALID_TABS = new Set<string>(NAV_ITEMS.map(i => i.tab))
+
+function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard")
+  const searchParams = useSearchParams()
+
+  // Read tab from URL, default to "dashboard"
+  const tabFromUrl = searchParams.get("tab") || "dashboard"
+  const [activeTab, setActiveTabState] = useState<AdminTab>(
+    VALID_TABS.has(tabFromUrl) ? (tabFromUrl as AdminTab) : "dashboard"
+  )
+
+  // Sync tab changes to URL
+  const setActiveTab = (tab: AdminTab) => {
+    setActiveTabState(tab)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", tab)
+    router.replace(`/admin?${params.toString()}`, { scroll: false })
+  }
+
+  // Sync URL changes to state (e.g., back/forward navigation)
+  useEffect(() => {
+    const tabParam = searchParams.get("tab") || "dashboard"
+    if (VALID_TABS.has(tabParam) && tabParam !== activeTab) {
+      setActiveTabState(tabParam as AdminTab)
+    }
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) {
@@ -84,3 +107,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     </AdminTabContext.Provider>
   )
 }
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </Suspense>
+  )
+}
+

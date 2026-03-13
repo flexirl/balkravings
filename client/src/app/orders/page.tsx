@@ -1,13 +1,20 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAuth } from "@/context/auth-context"
+import { useCart } from "@/context/cart-context"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Package } from "lucide-react"
+import { Package, ShoppingCart, Check, ChefHat, Truck, CircleX } from "lucide-react"
+import { OrderCardSkeleton } from "@/components/skeleton-loaders"
+import Link from "next/link"
+import { EmptyOrders } from "@/components/empty-states"
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh"
 import supabase from "@/lib/supabase"
 import { toast } from "sonner"
 
-interface OrderItem { name: string; quantity: number; price: number }
+interface OrderItem { name: string; quantity: number; price: number; food_id?: string; image?: string }
 interface Order {
   id: string
   items: OrderItem[]
@@ -18,6 +25,15 @@ interface Order {
   order_items: OrderItem[]
 }
 
+const STATUS_STEPS = ["placed", "preparing", "out-for-delivery", "delivered"]
+
+const STATUS_ICONS: Record<string, typeof Package> = {
+  placed: Check,
+  preparing: ChefHat,
+  "out-for-delivery": Truck,
+  delivered: Package,
+}
+
 const STATUS_STYLES: Record<string, string> = {
   placed: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   preparing: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
@@ -26,10 +42,66 @@ const STATUS_STYLES: Record<string, string> = {
   cancelled: "bg-red-500/10 text-red-400 border-red-500/20",
 }
 
+function OrderTimeline({ status }: { status: string }) {
+  if (status === "cancelled") {
+    return (
+      <div className="flex items-center gap-2 mt-4 p-3 rounded-xl bg-red-500/5 border border-red-500/10">
+        <CircleX className="h-5 w-5 text-red-400" />
+        <span className="text-sm text-red-400 font-medium">Order Cancelled</span>
+      </div>
+    )
+  }
+
+  const currentIdx = STATUS_STEPS.indexOf(status)
+
+  return (
+    <div className="flex items-center gap-1 mt-4">
+      {STATUS_STEPS.map((step, idx) => {
+        const isComplete = idx <= currentIdx
+        const isCurrent = idx === currentIdx
+        const Icon = STATUS_ICONS[step]
+
+        return (
+          <div key={step} className="flex items-center flex-1">
+            <div className="flex flex-col items-center flex-1">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                  isComplete
+                    ? isCurrent
+                      ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
+                      : "bg-primary/80 text-primary-foreground"
+                    : "bg-secondary text-muted-foreground"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+              </div>
+              <span className={`text-[10px] mt-1.5 capitalize ${isComplete ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                {step.replace(/-/g, " ")}
+              </span>
+            </div>
+            {idx < STATUS_STEPS.length - 1 && (
+              <div className={`h-0.5 flex-1 -mt-4 mx-1 rounded-full ${idx < currentIdx ? "bg-primary" : "bg-border"}`} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
+  const { addToCart } = useCart()
+  const router = useRouter()
+
+  // Auth guard
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/login")
+    }
+  }, [user, authLoading, router])
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -87,27 +159,73 @@ export default function OrdersPage() {
     }
   }, [user])
 
+  const handleReorder = (order: Order) => {
+    const items = order.order_items || []
+    if (items.length === 0) {
+      toast.error("No items to reorder")
+      return
+    }
+    items.forEach(item => {
+      addToCart({
+        foodId: item.food_id || item.name,
+        name: item.name,
+        price: item.price,
+        image: item.image || '',
+        quantity: item.quantity,
+      })
+    })
+    toast.success(`${items.length} item(s) added to cart!`, {
+      action: {
+        label: "View Cart",
+        onClick: () => router.push("/cart"),
+      },
+    })
+  }
+
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="container mx-auto px-4 md:px-6 py-10 max-w-4xl">
+        <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
+          <Package className="h-7 w-7 text-primary" />
+          My Orders
+        </h1>
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <OrderCardSkeleton key={i} />
+          ))}
+        </div>
       </div>
     )
   }
 
+  const refreshOrders = useCallback(async () => {
+    if (!user) return
+    const { data } = await supabase
+      .from('orders')
+      .select('*, order_items(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    if (data) setOrders(data)
+  }, [user])
+
+  const { pullIndicatorRef, isRefreshing } = usePullToRefresh({ onRefresh: refreshOrders })
+
   return (
-    <div className="container mx-auto px-4 md:px-6 py-10 max-w-4xl">
+    <div className="container mx-auto px-4 md:px-6 py-10 max-w-4xl relative">
+      {/* Pull-to-refresh indicator */}
+      <div
+        ref={pullIndicatorRef}
+        className="absolute top-0 left-0 right-0 flex items-center justify-center py-3 opacity-0 z-50 pointer-events-none"
+      >
+        <div className={`h-6 w-6 rounded-full border-2 border-primary border-t-transparent ${isRefreshing ? 'animate-spin' : ''}`} />
+      </div>
       <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
         <Package className="h-7 w-7 text-primary" />
         My Orders
       </h1>
 
       {orders.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="text-5xl mb-4">📦</div>
-          <h3 className="text-lg font-semibold mb-2">No orders yet</h3>
-          <p className="text-muted-foreground text-sm">Place your first order from the menu!</p>
-        </div>
+        <EmptyOrders />
       ) : (
         <div className="space-y-4">
           {orders.map((order) => (
@@ -125,7 +243,9 @@ export default function OrdersPage() {
                   {order.order_status.replace(/-/g, " ").toUpperCase()}
                 </Badge>
               </div>
-              <div className="space-y-2 mb-4">
+
+              {/* Order Items */}
+              <div className="space-y-2 mb-3">
                 {(order.order_items || []).map((item, idx) => (
                   <div key={idx} className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{item.quantity}× {item.name}</span>
@@ -133,10 +253,27 @@ export default function OrdersPage() {
                   </div>
                 ))}
               </div>
-              <div className="pt-4 border-t border-border flex justify-between font-bold">
-                <span>Total</span>
-                <span className="text-primary">₹{Number(order.total_amount).toFixed(0)}</span>
+
+              <div className="pt-3 border-t border-border flex justify-between items-center">
+                <div className="font-bold">
+                  <span className="text-sm text-muted-foreground font-normal mr-2">Total:</span>
+                  <span className="text-primary">₹{Number(order.total_amount).toFixed(0)}</span>
+                </div>
+                {(order.order_status === "delivered" || order.order_status === "cancelled") && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleReorder(order)}
+                    className="rounded-xl h-9 px-4 gap-1.5 border-primary/20 text-primary hover:bg-primary/5"
+                  >
+                    <ShoppingCart className="h-3.5 w-3.5" />
+                    Reorder
+                  </Button>
+                )}
               </div>
+
+              {/* Order Timeline */}
+              <OrderTimeline status={order.order_status} />
             </div>
           ))}
         </div>

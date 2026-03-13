@@ -81,13 +81,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsSyncing(true)
 
-      // Clear existing server cart
-      await supabase
-        .from('cart_items')
-        .delete()
-        .eq('user_id', user.id)
-
-      // Insert all items at once
+      // Upsert current items
       if (cartItems.length > 0) {
         const rows = cartItems.map(item => ({
           user_id: user.id,
@@ -96,6 +90,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }))
 
         await supabase.from('cart_items').upsert(rows, { onConflict: 'user_id,food_id' })
+      }
+
+      // Delete items that are no longer in the cart
+      const currentFoodIds = cartItems.map(item => item.foodId)
+      if (currentFoodIds.length > 0) {
+        await supabase
+          .from('cart_items')
+          .delete()
+          .eq('user_id', user.id)
+          .not('food_id', 'in', `(${currentFoodIds.join(',')})`)
+      } else {
+        // Cart is empty — delete all server items
+        await supabase
+          .from('cart_items')
+          .delete()
+          .eq('user_id', user.id)
       }
     } catch (error) {
       console.error("Error syncing cart:", error)
@@ -149,21 +159,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     handleUserChange()
   }, [user])
 
+  const MAX_QUANTITY = 20
+
   const addToCart = async (newItem: CartItem) => {
     setItems(prevItems => {
       const existingItem = prevItems.find(i => i.foodId === newItem.foodId)
       let updatedItems: CartItem[]
 
       if (existingItem) {
+        const newQty = Math.min(existingItem.quantity + newItem.quantity, MAX_QUANTITY)
+        if (newQty === existingItem.quantity) {
+          toast.error(`Maximum ${MAX_QUANTITY} items allowed`)
+          return prevItems
+        }
         toast.success("Item quantity updated")
         updatedItems = prevItems.map(i =>
           i.foodId === newItem.foodId
-            ? { ...i, quantity: i.quantity + newItem.quantity }
+            ? { ...i, quantity: newQty }
             : i
         )
       } else {
         toast.success("Added to cart")
-        updatedItems = [...prevItems, newItem]
+        updatedItems = [...prevItems, { ...newItem, quantity: Math.min(newItem.quantity, MAX_QUANTITY) }]
       }
 
       // Sync to server in background
@@ -187,6 +204,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const updateQuantity = (foodId: string, quantity: number) => {
     if (quantity <= 0) {
       removeFromCart(foodId)
+      return
+    }
+    if (quantity > MAX_QUANTITY) {
+      toast.error(`Maximum ${MAX_QUANTITY} items allowed`)
       return
     }
     setItems(prevItems => {

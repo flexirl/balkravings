@@ -25,7 +25,7 @@ const bebneue = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  title: "Kravings by ARF — Cloud Kitchen delevering affordable food to KIIT students",
+  title: "Kravings by ARF — Cloud Kitchen delivering affordable food to KIIT students",
   description:
     "Premium cloud kitchen delivering anywhere in KIIT. Order your favorite midnight meals now!",
 };

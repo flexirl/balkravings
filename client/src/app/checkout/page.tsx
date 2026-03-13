@@ -31,6 +31,12 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
+  // Address picker
+  const savedAddresses = user?.addresses || []
+  const [selectedAddressId, setSelectedAddressId] = useState<string | "new">(
+    savedAddresses.find(a => a.is_default)?.id || savedAddresses[0]?.id || "new"
+  )
+
   // Dynamic fees from settings
   const [deliveryFeeBase, setDeliveryFeeBase] = useState(40)
   const [gstPercent, setGstPercent] = useState(5)
@@ -44,32 +50,32 @@ export default function CheckoutPage() {
   const [couponApplied, setCouponApplied] = useState("")
   const [couponLoading, setCouponLoading] = useState(false)
 
-  // Auto-fill default address from user's saved addresses
+  // Auto-fill from selected address
   useEffect(() => {
     if (user?.name && !customerName) {
       setCustomerName(user.name)
     }
-    
-    if (user?.addresses && user.addresses.length > 0) {
-      const defaultAddress = user.addresses.find((addr) => addr.is_default)
-      
-      if (defaultAddress) {
+
+    if (selectedAddressId !== "new") {
+      const addr = savedAddresses.find(a => a.id === selectedAddressId)
+      if (addr) {
         const formattedAddress = [
-          defaultAddress.street,
-          defaultAddress.city,
-          defaultAddress.state,
-          defaultAddress.postal_code,
-          defaultAddress.country,
+          addr.street,
+          addr.city,
+          addr.state,
+          addr.postal_code,
+          addr.country,
         ].filter(Boolean).join(", ")
-        
         setAddress(formattedAddress)
-        
-        if (!phone && defaultAddress.phone_number) {
-          setPhone(defaultAddress.phone_number)
+        if (addr.phone_number) {
+          setPhone(addr.phone_number)
         }
       }
+    } else if (selectedAddressId === "new") {
+      // When switching to "new", clear address but keep other fields
+      if (savedAddresses.length > 0) setAddress("")
     }
-  }, [user, phone, customerName])
+  }, [user, selectedAddressId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch settings & availability from Supabase
   useEffect(() => {
@@ -105,7 +111,7 @@ export default function CheckoutPage() {
 
   const deliveryFee = freeDeliveryAbove > 0 && totalAmount >= freeDeliveryAbove ? 0 : deliveryFeeBase
   const tax = Math.round(totalAmount * (gstPercent / 100))
-  const grandTotal = totalAmount + deliveryFee + tax - couponDiscount
+  const grandTotal = Math.max(0, totalAmount + deliveryFee + tax - couponDiscount)
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return
@@ -191,8 +197,8 @@ export default function CheckoutPage() {
       toast.error("Your cart is empty")
       return
     }
-    if (!phone || phone.length < 10) {
-      toast.error("Please enter a valid phone number")
+    if (!phone || !/^\d{10}$/.test(phone.replace(/\s/g, ''))) {
+      toast.error("Please enter a valid 10-digit phone number")
       return
     }
     if (!address.trim()) {
@@ -242,28 +248,23 @@ export default function CheckoutPage() {
         console.error('Order items error:', itemsError.message)
       }
 
-      // Update coupon usage if applied
+      // Update coupon usage atomically if applied
       if (couponApplied) {
         try {
-          const { data: coupon } = await supabase
-            .from('coupons')
-            .select('used_count')
-            .eq('code', couponApplied)
-            .single()
-          if (coupon) {
-            await supabase
-              .from('coupons')
-              .update({ used_count: (coupon.used_count || 0) + 1 })
-              .eq('code', couponApplied)
-          }
+          await supabase.rpc('increment_coupon_usage', { coupon_code: couponApplied })
         } catch {
           // ignore coupon update errors
         }
       }
 
       clearCart()
-      toast.success("Order placed! Pay on delivery.")
-      router.push("/orders")
+      toast.success("Order placed successfully!", {
+        action: {
+          label: "View Order",
+          onClick: () => router.push("/orders"),
+        },
+      })
+      router.push(`/order-success?id=${order.id}`)
     } catch (error: unknown) {
       const err = error as { message?: string }
       toast.error(err.message || "Failed to place order")
@@ -342,19 +343,82 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="address" className="text-sm flex items-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Delivery Address
-                </Label>
-                <Input
-                  id="address"
-                  placeholder="House no, Street, Area, City, PIN"
-                  required
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="h-11 rounded-xl bg-secondary border-border focus:border-primary/50"
-                />
-              </div>
+              {savedAddresses.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-sm flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Select Address
+                  </Label>
+                  <div className="grid gap-2">
+                    {savedAddresses.map((addr) => {
+                      const formatted = [addr.street, addr.city, addr.state, addr.postal_code].filter(Boolean).join(", ")
+                      return (
+                        <label
+                          key={addr.id}
+                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                            selectedAddressId === addr.id
+                              ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
+                              : "border-border bg-secondary/30 hover:border-border/80"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="address-picker"
+                            checked={selectedAddressId === addr.id}
+                            onChange={() => setSelectedAddressId(addr.id)}
+                            className="mt-1 accent-primary"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded bg-secondary border border-border">
+                                {addr.type}
+                              </span>
+                              {addr.is_default && (
+                                <span className="text-[10px] text-primary font-medium">Default</span>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1 truncate">{formatted}</p>
+                            {addr.phone_number && (
+                              <p className="text-xs text-muted-foreground mt-0.5">📞 {addr.phone_number}</p>
+                            )}
+                          </div>
+                        </label>
+                      )
+                    })}
+                    <label
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        selectedAddressId === "new"
+                          ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
+                          : "border-border bg-secondary/30 hover:border-border/80"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="address-picker"
+                        checked={selectedAddressId === "new"}
+                        onChange={() => setSelectedAddressId("new")}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm font-medium">Use a different address</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {(savedAddresses.length === 0 || selectedAddressId === "new") && (
+                <div className="space-y-2">
+                  <Label htmlFor="address" className="text-sm flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Delivery Address
+                  </Label>
+                  <Input
+                    id="address"
+                    placeholder="House no, Street, Area, City, PIN"
+                    required
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    className="h-11 rounded-xl bg-secondary border-border focus:border-primary/50"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Payment Method — COD only */}

@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ShoppingCart, LogOut } from "lucide-react";
+import { Menu, X, ShoppingCart, LogOut, Sun, Moon } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useAuth } from "@/context/auth-context";
 import { useCart } from "@/context/cart-context";
 import { StoreBanner } from "./store-banner";
-import { Galindo } from "next/font/google";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,14 +19,10 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import supabase from "@/lib/supabase";
 
-const galindo = Galindo({
-  subsets: ["latin"],
-  weight: "400",
-});
-
 export function Navbar() {
   const { user, logout } = useAuth();
   const { cartCount } = useCart();
+  const { theme, setTheme } = useTheme();
   const isAdmin = user?.role === "admin";
 
   const [isOpen, setIsOpen] = useState(false);
@@ -121,7 +117,7 @@ export function Navbar() {
           {/* CENTER LOGO */}
           <Link
             href="/"
-            className={`absolute left-1/2 -translate-x-1/2 text-center ${galindo.className} text-primary`}
+            className={`absolute left-1/2 -translate-x-1/2 text-center font-[family-name:var(--font-galindo)] text-primary`}
           >
             {/* Desktop */}
             <span className="hidden md:block text-3xl lg:text-4xl tracking-wide">
@@ -145,7 +141,20 @@ export function Navbar() {
           </Link>
 
           {/* RIGHT SECTION */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+
+            {/* Dark Mode Toggle */}
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="h-9 w-9 rounded-xl flex items-center justify-center bg-secondary hover:bg-secondary/80 transition-colors"
+              title="Toggle theme"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4 text-foreground" />
+              ) : (
+                <Moon className="h-4 w-4 text-foreground" />
+              )}
+            </button>
 
             {/* CART — Always visible */}
             <Link href="/cart" className="relative">

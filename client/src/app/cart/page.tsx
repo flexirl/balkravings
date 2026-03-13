@@ -9,6 +9,8 @@ import { Trash2, Plus, Minus, ArrowRight, ShoppingBag } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
+import { EmptyCart } from "@/components/empty-states"
+
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, clearCart, totalAmount } = useCart()
 
@@ -64,20 +66,7 @@ export default function CartPage() {
   }, [items])
 
   if (items.length === 0) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
-        <div className="h-20 w-20 rounded-2xl bg-secondary flex items-center justify-center">
-          <ShoppingBag className="h-10 w-10 text-muted-foreground" />
-        </div>
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Your cart is empty</h2>
-          <p className="text-muted-foreground">Looks like you haven&apos;t added anything yet.</p>
-        </div>
-        <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl h-11 px-6">
-          <Link href="/menu">Browse Menu</Link>
-        </Button>
-      </div>
-    )
+    return <EmptyCart />
   }
 
   const deliveryFee = freeDeliveryAbove > 0 && totalAmount >= freeDeliveryAbove ? 0 : deliveryFeeBase
@@ -200,8 +189,8 @@ export default function CartPage() {
               </Button>
             ) : unavailableItems.length > 0 ? (
               <Button
-                disabled
-                className="w-full mt-6 h-12 text-base rounded-xl bg-destructive/20 text-destructive-foreground transition-all border border-destructive/30 hover:bg-destructive/20"
+                onClick={() => unavailableItems.forEach(id => removeFromCart(id))}
+                className="w-full mt-6 h-12 text-base rounded-xl bg-destructive/20 text-destructive-foreground transition-all border border-destructive/30 hover:bg-destructive/30"
               >
                 Remove out of stock items
               </Button>
