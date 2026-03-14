@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/context/auth-context"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useEffect, createContext, useContext, useState, Suspense } from "react"
+import { useEffect, createContext, useContext, Suspense } from "react"
 import { LayoutDashboard, ShoppingBag, UtensilsCrossed, ChefHat, Settings, Tag } from "lucide-react"
 
 export type AdminTab = "dashboard" | "orders" | "foods" | "settings" | "coupons"
