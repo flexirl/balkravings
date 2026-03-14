@@ -1,3 +1,11 @@
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Login",
+  description: "Sign in to your Kravings by ARF account to order food, track deliveries, and manage your profile.",
+  robots: { index: false, follow: false },
+}
+
 export default function AuthLayout({
   children,
 }: {

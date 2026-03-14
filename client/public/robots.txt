@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /profile
+Disallow: /cart
+Disallow: /checkout
+Disallow: /auth/
+Disallow: /order-success
+
+Sitemap: https://www.kravingskitchen.in/sitemap.xml

@@ -29,11 +29,12 @@ export function HeroSection() {
   transition={{ duration: 0.8, ease: "easeOut" }}
   className="font-display text-[#D91729] leading-none tracking-wide"
 >
-  <span className="block text-6xl sm:text-7xl md:text-8xl -mt-40">
+  <span className="sr-only">Kravings by ARF — Late Night Food Delivery Near KIIT, Bhubaneswar</span>
+  <span className="block text-6xl sm:text-7xl md:text-8xl -mt-40" aria-hidden="true">
     Midnight Cravings?
   </span>
 
-  <span className="block text-5xl sm:text-6xl md:text-7xl">
+  <span className="block text-5xl sm:text-6xl md:text-7xl" aria-hidden="true">
     We Got You.
   </span>
 </motion.h1>
