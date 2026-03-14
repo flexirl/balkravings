@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { usePathname } from "next/navigation"
 import { FoodCard } from "@/components/food-card"
 import { Input } from "@/components/ui/input"
 import { Search, Flame } from "lucide-react"
@@ -28,6 +29,7 @@ export default function MenuPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
+  const pathname = usePathname()
 
   // Derive categories dynamically from fetched foods
   const categories = useMemo(() => {
@@ -35,8 +37,12 @@ export default function MenuPage() {
     return ["All", ...uniqueCategories]
   }, [foods])
 
+  // Fetch foods — runs on mount AND on every soft navigation to /menu
   useEffect(() => {
+    let cancelled = false
+
     const fetchFoods = async () => {
+      setLoading(true)
       try {
         const { data, error } = await supabase
           .from('foods')
@@ -45,11 +51,11 @@ export default function MenuPage() {
           .order('created_at', { ascending: false })
 
         if (error) throw error
-        setFoods(data || [])
+        if (!cancelled) setFoods(data || [])
       } catch (error) {
         console.error("Failed to fetch foods:", error)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     fetchFoods()
@@ -66,15 +72,16 @@ export default function MenuPage() {
             .select('*')
             .eq('availability', true)
             .order('created_at', { ascending: false })
-          if (data) setFoods(data)
+          if (data && !cancelled) setFoods(data)
         }
       )
       .subscribe()
 
     return () => {
+      cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [pathname])
 
   const filteredFoods = foods.filter((food) => {
     const matchesSearch =

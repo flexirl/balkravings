@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from "react"
+import React, { createContext, useContext, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Session, User as SupabaseUser } from "@supabase/supabase-js"
 import supabase from "@/lib/supabase"
@@ -44,18 +44,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const profileCache = useRef<Map<string, User>>(new Map())
 
-  // Fetch or create profile from profiles table
+  // Fetch or create profile from profiles table — with parallel queries
   const fetchOrCreateProfile = async (supabaseUser: SupabaseUser): Promise<User | null> => {
-    try {
-      // Try to get existing profile
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', supabaseUser.id)
-        .single()
+    // Check cache first to avoid duplicate fetches
+    const cached = profileCache.current.get(supabaseUser.id)
+    if (cached) return cached
 
-      if (error || !profile) {
+    try {
+      // Fetch profile and addresses IN PARALLEL
+      const [profileResult, addressesResult] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', supabaseUser.id).single(),
+        supabase.from('addresses').select('*').eq('user_id', supabaseUser.id).order('is_default', { ascending: false }),
+      ])
+
+      if (profileResult.error || !profileResult.data) {
         // Profile doesn't exist — create it (for OAuth users or if trigger didn't fire)
         const name = supabaseUser.user_metadata?.name
           || supabaseUser.user_metadata?.full_name
@@ -64,60 +68,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const { data: newProfile, error: insertError } = await supabase
           .from('profiles')
-          .upsert({
-            id: supabaseUser.id,
-            name,
-          })
+          .upsert({ id: supabaseUser.id, name })
           .select()
           .single()
 
         if (insertError || !newProfile) {
-          console.error('Failed to create profile:', insertError?.message)
-          // Still return a basic user object so the UI works
-          return {
+          const fallback: User = {
             id: supabaseUser.id,
             name,
             email: supabaseUser.email || '',
             role: 'user',
             addresses: [],
           }
+          profileCache.current.set(supabaseUser.id, fallback)
+          return fallback
         }
 
-        return {
+        const result: User = {
           id: supabaseUser.id,
           name: newProfile.name || name,
           email: supabaseUser.email || '',
           phone: newProfile.phone || '',
           role: newProfile.role || 'user',
-          addresses: [],
+          addresses: addressesResult.data || [],
         }
+        profileCache.current.set(supabaseUser.id, result)
+        return result
       }
 
-      // Profile exists — fetch addresses too
-      const { data: addresses } = await supabase
-        .from('addresses')
-        .select('*')
-        .eq('user_id', supabaseUser.id)
-        .order('is_default', { ascending: false })
-
-      return {
+      const result: User = {
         id: supabaseUser.id,
-        name: profile.name || '',
+        name: profileResult.data.name || '',
         email: supabaseUser.email || '',
-        phone: profile.phone || '',
-        role: profile.role || 'user',
-        addresses: addresses || [],
+        phone: profileResult.data.phone || '',
+        role: profileResult.data.role || 'user',
+        addresses: addressesResult.data || [],
       }
+      profileCache.current.set(supabaseUser.id, result)
+      return result
     } catch (err) {
       console.error('fetchOrCreateProfile error:', err)
-      // Return a basic user even if DB fails
-      return {
+      const fallback: User = {
         id: supabaseUser.id,
         name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || '',
         email: supabaseUser.email || '',
         role: 'user',
         addresses: [],
       }
+      return fallback
     }
   }
 
@@ -135,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false)
         } else if (event === 'SIGNED_OUT') {
           setUser(null)
+          profileCache.current.clear()
           setLoading(false)
         }
       }
@@ -157,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Login — just authenticate, let onAuthStateChange handle profile loading
   const login = async (email: string, password: string): Promise<{ error?: string; role?: string }> => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
@@ -164,7 +164,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (data.user) {
       const profile = await fetchOrCreateProfile(data.user)
-      setUser(profile)
       return { role: profile?.role || 'user' }
     }
 
@@ -188,9 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .update({ name })
         .eq('id', data.user.id)
-
-      const profile = await fetchOrCreateProfile(data.user)
-      setUser(profile)
+      // onAuthStateChange will handle setting the user via fetchOrCreateProfile
     }
 
     return {}
@@ -207,22 +204,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateUser = (userData: Partial<User>) => {
     if (user) {
-      setUser({ ...user, ...userData })
+      const updated = { ...user, ...userData }
+      setUser(updated)
+      profileCache.current.set(user.id, updated)
     }
   }
 
   const logout = async () => {
-    // Clear state immediately so UI updates before navigation
+    // Sign out from Supabase first — clears session from localStorage
+    await supabase.auth.signOut()
+    // Clear app state after signout is complete
     setUser(null)
     setSession(null)
-    // Clear local storage cart to avoid stale data
+    profileCache.current.clear()
     localStorage.removeItem("cart")
-    // Sign out from Supabase
-    await supabase.auth.signOut()
-    // Navigate after state is cleared
+    // Navigate to login
     router.push("/login")
-    // Force a full page reload to reset all client state cleanly
-    window.location.href = "/login"
   }
 
   return (
