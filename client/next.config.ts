@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "hptyfnfkfiylfaohbgtj.supabase.co",
+      },
+      {
+        protocol: "https",
         hostname: "api.dicebear.com",
       },
     ],

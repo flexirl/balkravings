@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Loader2, ChefHat } from "lucide-react"
 import { toast } from "sonner"
+import supabase from "@/lib/supabase"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -85,7 +86,27 @@ export default function LoginPage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password" className="text-sm">Password</Label>
-            <Link href="#" className="text-xs text-primary hover:underline">Forgot?</Link>
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={async () => {
+                if (!email) {
+                  toast.error("Enter your email first")
+                  return
+                }
+                try {
+                  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: `${window.location.origin}/auth/callback`,
+                  })
+                  if (error) throw error
+                  toast.success("Password reset email sent! Check your inbox.")
+                } catch {
+                  toast.error("Failed to send reset email")
+                }
+              }}
+            >
+              Forgot?
+            </button>
           </div>
           <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-xl bg-secondary border-border focus:border-primary/50" />
         </div>

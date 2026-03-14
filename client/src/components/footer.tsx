@@ -1,10 +1,6 @@
 import Link from "next/link";
 import { ChefHat, MapPin, Phone, Clock, Instagram, Facebook, Twitter } from "lucide-react";
-import { Galindo } from "next/font/google";
-  const galindo = Galindo({
-  subsets: ["latin"],
-  weight: "400",
-});
+
 export function Footer() {
   return (
     <footer className="bg-card border-t border-border pt-16 pb-8">
@@ -17,20 +13,20 @@ export function Footer() {
                 <ChefHat className="h-5 w-5 text-primary-foreground" />
               </div>
               <div className="flex flex-col justify-center">
-                <span className={`${galindo.className} text-xl leading-none tracking-wide text-primary`}>KRAVINGS <br />by ARF</span>
+                <span className="font-[family-name:var(--font-galindo)] text-xl leading-none tracking-wide text-primary">KRAVINGS <br />by ARF</span>
               </div>
             </Link>
             <p className="text-muted-foreground text-sm mb-6 max-w-xs">
               Premium cloud kitchen serving hot, hygiene-first, and chef-crafted meals exclusively for KIIT students and nearby residents.
             </p>
             <div className="flex items-center gap-4">
-              <Link href="#" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
+              <Link href="https://instagram.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
                 <Instagram className="h-5 w-5" />
               </Link>
-              <Link href="#" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
+              <Link href="https://facebook.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
                 <Facebook className="h-5 w-5" />
               </Link>
-              <Link href="#" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
+              <Link href="https://twitter.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
                 <Twitter className="h-5 w-5" />
               </Link>
             </div>
@@ -43,7 +39,7 @@ export function Footer() {
               <li><Link href="/" className="text-muted-foreground hover:text-primary transition-colors text-sm">Home</Link></li>
               <li><Link href="/menu" className="text-muted-foreground hover:text-primary transition-colors text-sm">Our Menu</Link></li>
               <li><Link href="/#offers" className="text-muted-foreground hover:text-primary transition-colors text-sm">Offers</Link></li>
-              <li><Link href="/track-order" className="text-muted-foreground hover:text-primary transition-colors text-sm">Track Order</Link></li>
+              <li><Link href="/orders" className="text-muted-foreground hover:text-primary transition-colors text-sm">Track Order</Link></li>
             </ul>
           </div>
 
@@ -51,9 +47,9 @@ export function Footer() {
           <div>
             <h3 className="font-display text-xl mb-4">Legal</h3>
             <ul className="space-y-3">
-              <li><Link href="#" className="text-muted-foreground hover:text-primary transition-colors text-sm">Privacy Policy</Link></li>
-              <li><Link href="#" className="text-muted-foreground hover:text-primary transition-colors text-sm">Terms of Service</Link></li>
-              <li><Link href="#" className="text-muted-foreground hover:text-primary transition-colors text-sm">Refund Policy</Link></li>
+              <li><Link href="/privacy" className="text-muted-foreground hover:text-primary transition-colors text-sm">Privacy Policy</Link></li>
+              <li><Link href="/terms" className="text-muted-foreground hover:text-primary transition-colors text-sm">Terms of Service</Link></li>
+              <li><Link href="/refund" className="text-muted-foreground hover:text-primary transition-colors text-sm">Refund Policy</Link></li>
             </ul>
           </div>
 

@@ -1,9 +1,12 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { FoodCard } from "@/components/food-card"
 import { Input } from "@/components/ui/input"
-import { Search, Flame, Loader2 } from "lucide-react"
+import { Search, Flame } from "lucide-react"
+import { MenuCardSkeleton } from "@/components/skeleton-loaders"
+import { EmptyMenu, NoResults } from "@/components/empty-states"
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh"
 import supabase from "@/lib/supabase"
 
 
@@ -81,8 +84,26 @@ export default function MenuPage() {
     return matchesSearch && matchesCategory
   })
 
+  const refreshFoods = useCallback(async () => {
+    const { data } = await supabase
+      .from('foods')
+      .select('*')
+      .eq('availability', true)
+      .order('created_at', { ascending: false })
+    if (data) setFoods(data)
+  }, [])
+
+  const { pullIndicatorRef, isRefreshing } = usePullToRefresh({ onRefresh: refreshFoods })
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen relative">
+      {/* Pull-to-refresh indicator */}
+      <div
+        ref={pullIndicatorRef}
+        className="absolute top-0 left-0 right-0 flex items-center justify-center py-3 opacity-0 z-50 pointer-events-none"
+      >
+        <div className={`h-6 w-6 rounded-full border-2 border-primary border-t-transparent ${isRefreshing ? 'animate-spin' : ''}`} />
+      </div>
       {/* Header */}
       <div className="border-b border-border bg-card/30">
         <div className="container mx-auto px-4 md:px-6 py-8">
@@ -97,7 +118,7 @@ export default function MenuPage() {
               </p>
             </div>
 
-            <div className="relative w-full lg:top-8 md:w-80">
+            <div className="relative w-full md:w-80">
               <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder="Search dishes..."
@@ -110,19 +131,25 @@ export default function MenuPage() {
 
           {/* Category Tabs */}
           <div className="flex gap-2 mt-6 overflow-x-auto pb-1 scrollbar-hide">
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`px-5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                  selectedCategory === category
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                    : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
+            {categories.map((category) => {
+              const count = category === "All" ? foods.length : foods.filter(f => f.category === category).length
+              return (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`px-5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+                    selectedCategory === category
+                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                      : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                  }`}
+                >
+                  {category}
+                  <span className={`ml-1.5 text-xs ${selectedCategory === category ? "opacity-80" : "opacity-60"}`}>
+                    ({count})
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -130,8 +157,10 @@ export default function MenuPage() {
       {/* Grid */}
       <div className="container mx-auto px-4 md:px-6 py-8">
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <MenuCardSkeleton key={i} />
+            ))}
           </div>
         ) : filteredFoods.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -140,14 +169,8 @@ export default function MenuPage() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-24">
-            <div className="text-5xl mb-4">🍽️</div>
-            <h3 className="text-lg font-semibold mb-2">No dishes found</h3>
-            <p className="text-muted-foreground text-sm">
-              {foods.length === 0
-                ? "No items added yet. Admin can add food items from the dashboard."
-                : "Try a different search or category."}
-            </p>
+          <div className="py-8">
+            {foods.length === 0 ? <EmptyMenu /> : <NoResults />}
           </div>
         )}
       </div>

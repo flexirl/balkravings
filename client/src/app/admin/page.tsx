@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,7 +48,9 @@ import {
   Eye, EyeOff,
   Tag,
   Edit2,
+  Search,
 } from "lucide-react"
+import { DashboardStatsSkeleton, AdminOrderSkeleton, AdminFoodSkeleton } from "@/components/skeleton-loaders"
 
 interface Food {
   id: string
@@ -90,6 +92,42 @@ export default function AdminDashboard() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const { activeTab, setActiveTab } = useAdminTab()
+  const audioContextRef = useRef<AudioContext | null>(null)
+
+  // Play a two-tone notification beep using Web Audio API
+  const playNotificationSound = () => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+      }
+      const ctx = audioContextRef.current
+      const now = ctx.currentTime
+
+      // First tone: C5 (523 Hz)
+      const osc1 = ctx.createOscillator()
+      const gain1 = ctx.createGain()
+      osc1.type = "sine"
+      osc1.frequency.value = 523
+      gain1.gain.setValueAtTime(0.3, now)
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.15)
+      osc1.connect(gain1).connect(ctx.destination)
+      osc1.start(now)
+      osc1.stop(now + 0.15)
+
+      // Second tone: E5 (659 Hz)
+      const osc2 = ctx.createOscillator()
+      const gain2 = ctx.createGain()
+      osc2.type = "sine"
+      osc2.frequency.value = 659
+      gain2.gain.setValueAtTime(0.3, now + 0.18)
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.35)
+      osc2.connect(gain2).connect(ctx.destination)
+      osc2.start(now + 0.18)
+      osc2.stop(now + 0.35)
+    } catch {
+      // Audio not available, silently ignore
+    }
+  }
 
   // Stats
   const [stats, setStats] = useState<Stats | null>(null)
@@ -117,6 +155,8 @@ export default function AdminDashboard() {
   // Orders
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(true)
+  const [orderSearch, setOrderSearch] = useState("")
+  const [orderStatusFilter, setOrderStatusFilter] = useState("all")
 
   // Settings
   const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, gst_percent: 5, free_delivery_above: 0, is_store_open: true, store_opens_at: null })
@@ -243,6 +283,7 @@ export default function AdminDashboard() {
               recentOrders: [newOrder, ...prev.recentOrders].slice(0, 5),
             } : prev)
             toast.success(`🔔 New order from ${newOrder.customer_name || "Customer"}!`)
+            playNotificationSound()
           }
         }
       )
@@ -288,14 +329,37 @@ export default function AdminDashboard() {
     try {
       let imageUrl = imagePreview
 
-      // Upload new image if selected (still via Express/Cloudinary)
+      // Upload new image to Supabase Storage
       if (imageFile) {
-        const formData = new FormData()
-        formData.append("image", imageFile)
-        const { data: uploadData } = await api.post("/upload", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        })
-        imageUrl = uploadData.url
+        const fileExt = imageFile.name.split('.').pop()
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+        const filePath = `food-images/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('food-images')
+          .upload(filePath, imageFile, {
+            cacheControl: '3600',
+            upsert: false,
+          })
+
+        if (uploadError) {
+          // Fallback: try uploading via Express/Cloudinary
+          try {
+            const formData = new FormData()
+            formData.append("image", imageFile)
+            const { data: uploadData } = await api.post("/upload", formData, {
+              headers: { "Content-Type": "multipart/form-data" },
+            })
+            imageUrl = uploadData.url
+          } catch {
+            throw new Error("Image upload failed. Please check that Supabase Storage bucket 'food-images' exists or the Express server is running.")
+          }
+        } else {
+          const { data: publicUrlData } = supabase.storage
+            .from('food-images')
+            .getPublicUrl(filePath)
+          imageUrl = publicUrlData.publicUrl
+        }
       }
 
       const payload = {
@@ -533,9 +597,7 @@ export default function AdminDashboard() {
           </div>
 
           {statsLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <DashboardStatsSkeleton />
           ) : stats ? (
             <>
               {/* Stats Grid */}
@@ -733,8 +795,10 @@ export default function AdminDashboard() {
 
           {/* Food List */}
           {foodsLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="grid gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <AdminFoodSkeleton key={i} />
+              ))}
             </div>
           ) : foods.length === 0 ? (
             <div className="text-center py-16">
@@ -814,23 +878,62 @@ export default function AdminDashboard() {
       {/* ==================== ORDERS TAB ==================== */}
       {activeTab === "orders" && (
         <div className="space-y-6">
-          <div>
-            <h2 className="text-2xl font-bold">Orders</h2>
-            <p className="text-muted-foreground text-sm mt-1">{orders.length} total orders</p>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold">Orders</h2>
+              <p className="text-muted-foreground text-sm mt-1">{orders.length} total orders</p>
+            </div>
+            <div className="flex gap-3">
+              <div className="relative w-60">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name..."
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  className="pl-9 h-9 rounded-xl bg-secondary border-border text-sm"
+                />
+              </div>
+              <select
+                value={orderStatusFilter}
+                onChange={(e) => setOrderStatusFilter(e.target.value)}
+                className="h-9 px-3 rounded-xl bg-secondary border border-border text-sm"
+              >
+                <option value="all">All Status</option>
+                <option value="placed">Placed</option>
+                <option value="preparing">Preparing</option>
+                <option value="out-for-delivery">Out for Delivery</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
           </div>
 
           {ordersLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <AdminOrderSkeleton key={i} />
+              ))}
             </div>
           ) : orders.length === 0 ? (
             <div className="text-center py-16">
               <Package className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No orders yet</p>
             </div>
-          ) : (
+          ) : (() => {
+            const filtered = orders.filter(order => {
+              const matchesSearch = !orderSearch || (order.customer_name || "").toLowerCase().includes(orderSearch.toLowerCase())
+              const matchesStatus = orderStatusFilter === "all" || order.order_status === orderStatusFilter
+              return matchesSearch && matchesStatus
+            })
+            if (filtered.length === 0) return (
+              <div className="text-center py-16">
+                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">No orders matching filters</p>
+              </div>
+            )
+            return (
             <div className="space-y-4">
-              {orders.map((order) => (
+              {filtered.map((order) => (
                 <Card key={order.id} className="bg-card border-border">
                   <CardContent className="pt-5 pb-4">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -908,7 +1011,8 @@ export default function AdminDashboard() {
                 </Card>
               ))}
             </div>
-          )}
+            )
+          })()}
         </div>
       )}
 
@@ -974,7 +1078,20 @@ export default function AdminDashboard() {
                           <Input
                             type="datetime-local"
                             value={appSettings.store_opens_at ? new Date(appSettings.store_opens_at).toISOString().slice(0, 16) : ""}
-                            onChange={(e) => setAppSettings({ ...appSettings, store_opens_at: e.target.value || null })}
+                            onChange={async (e) => {
+                              const newValue = e.target.value || null
+                              setAppSettings({ ...appSettings, store_opens_at: newValue })
+                              try {
+                                const { error } = await supabase
+                                  .from('settings')
+                                  .update({ store_opens_at: newValue })
+                                  .eq('id', appSettings.id || '')
+                                if (error) throw error
+                                toast.success("Opening time updated")
+                              } catch {
+                                toast.error("Failed to update opening time")
+                              }
+                            }}
                             className="h-9 rounded-lg bg-background border-border text-sm"
                           />
                         </div>
