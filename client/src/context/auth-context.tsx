@@ -217,7 +217,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
     setSession(null)
     profileCache.current.clear()
-    localStorage.removeItem("cart")
     // Navigate to login
     router.push("/login")
   }

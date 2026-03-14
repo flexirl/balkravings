@@ -83,6 +83,11 @@ export default function MenuPage() {
     }
   }, [pathname])
 
+  // Scroll to top whenever the menu page is navigated to
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
   const filteredFoods = foods.filter((food) => {
     const matchesSearch =
       food.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
