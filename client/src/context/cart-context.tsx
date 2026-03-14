@@ -1,9 +1,8 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react"
+import React, { createContext, useContext, useState, useRef } from "react"
 import { toast } from "sonner"
 import { useAuth } from "./auth-context"
-import supabase from "@/lib/supabase"
 
 interface CartItem {
   foodId: string
@@ -21,116 +20,28 @@ interface CartContextType {
   clearCart: () => void
   totalAmount: number
   cartCount: number
-  isSyncing: boolean
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
-  const [isSyncing, setIsSyncing] = useState(false)
   const { user } = useAuth()
-  const prevUserId = useRef<string | null>(null)
-  const hasLoadedRef = useRef(false)
 
-  // ───── Helpers ─────
+  // Track previous user to clear cart on user change (login/logout/switch)
+  const prevUserId = useRef<string | null | undefined>(undefined)
 
-  const fetchServerCart = useCallback(async (): Promise<CartItem[]> => {
-    const { data, error } = await supabase
-      .from('cart_items')
-      .select('food_id, quantity, foods(name, price, image)')
-      .order('created_at', { ascending: true })
+  // Clear cart whenever user changes (logout, login, switch account)
+  if (prevUserId.current !== undefined && (user?.id || null) !== prevUserId.current) {
+    setItems([])
+  }
+  prevUserId.current = user?.id || null
 
-    if (error || !data) return []
-
-    return data.map((item: Record<string, unknown>) => {
-      const food = item.foods as Record<string, unknown> | null
-      return {
-        foodId: item.food_id as string,
-        name: (food?.name as string) || '',
-        price: Number(food?.price) || 0,
-        image: (food?.image as string) || '',
-        quantity: item.quantity as number,
-      }
-    })
-  }, [])
-
-  const pushLocalCartToServer = useCallback(async (localItems: CartItem[], userId: string) => {
-    if (localItems.length === 0) return
-    const rows = localItems.map(item => ({
-      user_id: userId,
-      food_id: item.foodId,
-      quantity: item.quantity,
-    }))
-    await supabase.from('cart_items').upsert(rows, { onConflict: 'user_id,food_id' })
-  }, [])
-
-  // ───── Initialization ─────
-
-  // Load cart on mount / user change
-  useEffect(() => {
-    const loadCart = async () => {
-      if (user) {
-        // Logged in: server is the source of truth
-        setIsSyncing(true)
-        try {
-          // If user just logged in and there are local items, push them to server first
-          if (user.id !== prevUserId.current && !hasLoadedRef.current) {
-            const storedCart = localStorage.getItem("cart")
-            if (storedCart) {
-              try {
-                const localItems = JSON.parse(storedCart) as CartItem[]
-                if (localItems.length > 0) {
-                  await pushLocalCartToServer(localItems, user.id)
-                }
-              } catch { /* ignore corrupt data */ }
-              localStorage.removeItem("cart")
-            }
-          }
-
-          // Fetch latest server cart as the single source of truth
-          const serverItems = await fetchServerCart()
-          setItems(serverItems)
-        } catch (error) {
-          console.error("Error loading cart:", error)
-        } finally {
-          setIsSyncing(false)
-          hasLoadedRef.current = true
-        }
-      } else if (!user && prevUserId.current) {
-        // User logged out — clear cart state, keep nothing
-        setItems([])
-        localStorage.removeItem("cart")
-        hasLoadedRef.current = false
-      } else if (!user) {
-        // Guest: load from localStorage
-        const storedCart = localStorage.getItem("cart")
-        if (storedCart) {
-          try {
-            setItems(JSON.parse(storedCart) as CartItem[])
-          } catch { /* ignore */ }
-        }
-        hasLoadedRef.current = true
-      }
-
-      prevUserId.current = user?.id || null
-    }
-
-    loadCart()
-  }, [user, fetchServerCart, pushLocalCartToServer])
-
-  // Save cart to localStorage for guests only
-  useEffect(() => {
-    if (!user && hasLoadedRef.current) {
-      localStorage.setItem("cart", JSON.stringify(items))
-    }
-  }, [items, user])
-
-  // ───── Cart Operations ─────
+  // ───── Cart Operations (session-only, no database) ─────
 
   const MAX_QUANTITY = 20
 
-  const addToCart = async (newItem: CartItem) => {
+  const addToCart = (newItem: CartItem) => {
     setItems(prevItems => {
       const existingItem = prevItems.find(i => i.foodId === newItem.foodId)
 
@@ -146,37 +57,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         )
       } else {
         toast.success("Added to cart")
-        return [...prevItems, { ...newItem, quantity: Math.min(newItem.quantity, MAX_QUANTITY) }]
+        const finalQty = Math.min(newItem.quantity, MAX_QUANTITY)
+        return [...prevItems, { ...newItem, quantity: finalQty }]
       }
     })
-
-    // Sync to server outside of setItems to avoid closure issues
-    if (user) {
-      try {
-        await supabase.from('cart_items').upsert({
-          user_id: user.id,
-          food_id: newItem.foodId,
-          quantity: newItem.quantity,
-        }, { onConflict: 'user_id,food_id' })
-      } catch { /* ignore */ }
-    }
   }
 
-  const removeFromCart = async (foodId: string) => {
+  const removeFromCart = (foodId: string) => {
     setItems(prevItems => prevItems.filter(i => i.foodId !== foodId))
     toast.info("Item removed from cart")
-
-    if (user) {
-      try {
-        await supabase.from('cart_items')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('food_id', foodId)
-      } catch { /* ignore */ }
-    }
   }
 
-  const updateQuantity = async (foodId: string, quantity: number) => {
+  const updateQuantity = (foodId: string, quantity: number) => {
     if (quantity <= 0) {
       removeFromCart(foodId)
       return
@@ -189,28 +81,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems(prevItems =>
       prevItems.map(i => i.foodId === foodId ? { ...i, quantity } : i)
     )
-
-    if (user) {
-      try {
-        await supabase.from('cart_items')
-          .update({ quantity })
-          .eq('user_id', user.id)
-          .eq('food_id', foodId)
-      } catch { /* ignore */ }
-    }
   }
 
-  const clearCart = async () => {
+  const clearCart = () => {
     setItems([])
     toast.info("Cart cleared")
-
-    if (user) {
-      try {
-        await supabase.from('cart_items')
-          .delete()
-          .eq('user_id', user.id)
-      } catch { /* ignore */ }
-    }
   }
 
   const totalAmount = items.reduce((total, item) => total + item.price * item.quantity, 0)
@@ -226,7 +101,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         clearCart,
         totalAmount,
         cartCount,
-        isSyncing,
       }}
     >
       {children}
@@ -241,4 +115,3 @@ export function useCart() {
   }
   return context
 }
-

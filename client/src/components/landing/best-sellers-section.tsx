@@ -83,7 +83,7 @@ const ProductCard = ({ product }: { product: Product }) => {
   const router = useRouter();
 
   const handleClick = () => {
-    router.push("/menu?category=combos");
+    router.push("/menu");
   };
 
   return (

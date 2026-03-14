@@ -28,6 +28,9 @@ export const metadata: Metadata = {
   title: "Kravings by ARF — Cloud Kitchen delivering affordable food to KIIT students",
   description:
     "Premium cloud kitchen delivering anywhere in KIIT. Order your favorite midnight meals now!",
+  verification: {
+    google: "p3_3bLcmpm5R6P-uIWVZxqCqn8QUsi2f-IQ63c2ndJ4",
+  },
 };
 
 export default function RootLayout({
