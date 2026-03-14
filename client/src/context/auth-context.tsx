@@ -212,10 +212,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = async () => {
-    await supabase.auth.signOut()
+    // Clear state immediately so UI updates before navigation
     setUser(null)
     setSession(null)
+    // Clear local storage cart to avoid stale data
+    localStorage.removeItem("cart")
+    // Sign out from Supabase
+    await supabase.auth.signOut()
+    // Navigate after state is cleared
     router.push("/login")
+    // Force a full page reload to reset all client state cleanly
+    window.location.href = "/login"
   }
 
   return (

@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ShoppingCart, LogOut, Sun, Moon } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Menu, X, ShoppingCart, LogOut } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useCart } from "@/context/cart-context";
 import { StoreBanner } from "./store-banner";
@@ -22,7 +21,6 @@ import supabase from "@/lib/supabase";
 export function Navbar() {
   const { user, logout } = useAuth();
   const { cartCount } = useCart();
-  const { theme, setTheme } = useTheme();
   const isAdmin = user?.role === "admin";
 
   const [isOpen, setIsOpen] = useState(false);
@@ -142,19 +140,6 @@ export function Navbar() {
 
           {/* RIGHT SECTION */}
           <div className="flex items-center gap-3">
-
-            {/* Dark Mode Toggle */}
-            <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="h-9 w-9 rounded-xl flex items-center justify-center bg-secondary hover:bg-secondary/80 transition-colors"
-              title="Toggle theme"
-            >
-              {theme === "dark" ? (
-                <Sun className="h-4 w-4 text-foreground" />
-              ) : (
-                <Moon className="h-4 w-4 text-foreground" />
-              )}
-            </button>
 
             {/* CART — Always visible */}
             <Link href="/cart" className="relative">
