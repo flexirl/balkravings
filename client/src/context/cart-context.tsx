@@ -30,30 +30,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
   const [isSyncing, setIsSyncing] = useState(false)
   const { user } = useAuth()
-  const isInitialLoad = useRef(true)
   const prevUserId = useRef<string | null>(null)
+  const hasLoadedRef = useRef(false)
 
-  // Load cart from localStorage on mount
-  useEffect(() => {
-    const storedCart = localStorage.getItem("cart")
-    if (storedCart) {
-      try {
-        setItems(JSON.parse(storedCart) as CartItem[])
-      } catch {
-        // ignore corrupt data
-      }
-    }
-    isInitialLoad.current = false
-  }, [])
+  // ───── Helpers ─────
 
-  // Save cart to localStorage whenever items change
-  useEffect(() => {
-    if (!isInitialLoad.current) {
-      localStorage.setItem("cart", JSON.stringify(items))
-    }
-  }, [items])
-
-  // Fetch cart from Supabase for logged-in users
   const fetchServerCart = useCallback(async (): Promise<CartItem[]> => {
     const { data, error } = await supabase
       .from('cart_items')
@@ -74,97 +55,84 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  // Sync local cart to Supabase
-  const syncToServer = useCallback(async (cartItems: CartItem[]) => {
-    if (!user) return
+  const pushLocalCartToServer = useCallback(async (localItems: CartItem[], userId: string) => {
+    if (localItems.length === 0) return
+    const rows = localItems.map(item => ({
+      user_id: userId,
+      food_id: item.foodId,
+      quantity: item.quantity,
+    }))
+    await supabase.from('cart_items').upsert(rows, { onConflict: 'user_id,food_id' })
+  }, [])
 
-    try {
-      setIsSyncing(true)
+  // ───── Initialization ─────
 
-      // Upsert current items
-      if (cartItems.length > 0) {
-        const rows = cartItems.map(item => ({
-          user_id: user.id,
-          food_id: item.foodId,
-          quantity: item.quantity,
-        }))
-
-        await supabase.from('cart_items').upsert(rows, { onConflict: 'user_id,food_id' })
-      }
-
-      // Delete items that are no longer in the cart
-      const currentFoodIds = cartItems.map(item => item.foodId)
-      if (currentFoodIds.length > 0) {
-        await supabase
-          .from('cart_items')
-          .delete()
-          .eq('user_id', user.id)
-          .not('food_id', 'in', `(${currentFoodIds.join(',')})`)
-      } else {
-        // Cart is empty — delete all server items
-        await supabase
-          .from('cart_items')
-          .delete()
-          .eq('user_id', user.id)
-      }
-    } catch (error) {
-      console.error("Error syncing cart:", error)
-    } finally {
-      setIsSyncing(false)
-    }
-  }, [user])
-
-  // Handle user login — merge local cart with server cart
+  // Load cart on mount / user change
   useEffect(() => {
-    if (isInitialLoad.current) return
-
-    const handleUserChange = async () => {
-      if (user && user.id !== prevUserId.current) {
-        // User just logged in
+    const loadCart = async () => {
+      if (user) {
+        // Logged in: server is the source of truth
         setIsSyncing(true)
         try {
-          const serverItems = await fetchServerCart()
-          const localItems = items
-
-          if (localItems.length > 0 && serverItems.length > 0) {
-            // Merge: server takes priority, add local-only items
-            const serverMap = new Map(serverItems.map(i => [i.foodId, i]))
-            const merged = [...serverItems]
-            for (const local of localItems) {
-              if (!serverMap.has(local.foodId)) {
-                merged.push(local)
-              }
+          // If user just logged in and there are local items, push them to server first
+          if (user.id !== prevUserId.current && !hasLoadedRef.current) {
+            const storedCart = localStorage.getItem("cart")
+            if (storedCart) {
+              try {
+                const localItems = JSON.parse(storedCart) as CartItem[]
+                if (localItems.length > 0) {
+                  await pushLocalCartToServer(localItems, user.id)
+                }
+              } catch { /* ignore corrupt data */ }
+              localStorage.removeItem("cart")
             }
-            setItems(merged)
-            await syncToServer(merged)
-          } else if (localItems.length > 0) {
-            // Only local items — push to server
-            await syncToServer(localItems)
-          } else if (serverItems.length > 0) {
-            // Only server items — load to local
-            setItems(serverItems)
           }
+
+          // Fetch latest server cart as the single source of truth
+          const serverItems = await fetchServerCart()
+          setItems(serverItems)
         } catch (error) {
-          console.error("Error merging carts:", error)
+          console.error("Error loading cart:", error)
         } finally {
           setIsSyncing(false)
+          hasLoadedRef.current = true
         }
       } else if (!user && prevUserId.current) {
-        // User logged out — keep local cart as-is
+        // User logged out — clear cart state, keep nothing
+        setItems([])
+        localStorage.removeItem("cart")
+        hasLoadedRef.current = false
+      } else if (!user) {
+        // Guest: load from localStorage
+        const storedCart = localStorage.getItem("cart")
+        if (storedCart) {
+          try {
+            setItems(JSON.parse(storedCart) as CartItem[])
+          } catch { /* ignore */ }
+        }
+        hasLoadedRef.current = true
       }
 
       prevUserId.current = user?.id || null
     }
 
-    handleUserChange()
-  }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
+    loadCart()
+  }, [user, fetchServerCart, pushLocalCartToServer])
+
+  // Save cart to localStorage for guests only
+  useEffect(() => {
+    if (!user && hasLoadedRef.current) {
+      localStorage.setItem("cart", JSON.stringify(items))
+    }
+  }, [items, user])
+
+  // ───── Cart Operations ─────
 
   const MAX_QUANTITY = 20
 
   const addToCart = async (newItem: CartItem) => {
     setItems(prevItems => {
       const existingItem = prevItems.find(i => i.foodId === newItem.foodId)
-      let updatedItems: CartItem[]
 
       if (existingItem) {
         const newQty = Math.min(existingItem.quantity + newItem.quantity, MAX_QUANTITY)
@@ -173,35 +141,42 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           return prevItems
         }
         toast.success("Item quantity updated")
-        updatedItems = prevItems.map(i =>
-          i.foodId === newItem.foodId
-            ? { ...i, quantity: newQty }
-            : i
+        return prevItems.map(i =>
+          i.foodId === newItem.foodId ? { ...i, quantity: newQty } : i
         )
       } else {
         toast.success("Added to cart")
-        updatedItems = [...prevItems, { ...newItem, quantity: Math.min(newItem.quantity, MAX_QUANTITY) }]
+        return [...prevItems, { ...newItem, quantity: Math.min(newItem.quantity, MAX_QUANTITY) }]
       }
-
-      // Sync to server in background
-      if (user) {
-        syncToServer(updatedItems)
-      }
-
-      return updatedItems
     })
+
+    // Sync to server outside of setItems to avoid closure issues
+    if (user) {
+      try {
+        await supabase.from('cart_items').upsert({
+          user_id: user.id,
+          food_id: newItem.foodId,
+          quantity: newItem.quantity,
+        }, { onConflict: 'user_id,food_id' })
+      } catch { /* ignore */ }
+    }
   }
 
-  const removeFromCart = (foodId: string) => {
-    setItems(prevItems => {
-      const updatedItems = prevItems.filter(i => i.foodId !== foodId)
-      if (user) syncToServer(updatedItems)
-      return updatedItems
-    })
+  const removeFromCart = async (foodId: string) => {
+    setItems(prevItems => prevItems.filter(i => i.foodId !== foodId))
     toast.info("Item removed from cart")
+
+    if (user) {
+      try {
+        await supabase.from('cart_items')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('food_id', foodId)
+      } catch { /* ignore */ }
+    }
   }
 
-  const updateQuantity = (foodId: string, quantity: number) => {
+  const updateQuantity = async (foodId: string, quantity: number) => {
     if (quantity <= 0) {
       removeFromCart(foodId)
       return
@@ -210,25 +185,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       toast.error(`Maximum ${MAX_QUANTITY} items allowed`)
       return
     }
-    setItems(prevItems => {
-      const updatedItems = prevItems.map(i =>
-        i.foodId === foodId ? { ...i, quantity } : i
-      )
-      if (user) syncToServer(updatedItems)
-      return updatedItems
-    })
+
+    setItems(prevItems =>
+      prevItems.map(i => i.foodId === foodId ? { ...i, quantity } : i)
+    )
+
+    if (user) {
+      try {
+        await supabase.from('cart_items')
+          .update({ quantity })
+          .eq('user_id', user.id)
+          .eq('food_id', foodId)
+      } catch { /* ignore */ }
+    }
   }
 
-  const clearCart = () => {
+  const clearCart = async () => {
     setItems([])
-    if (user) {
-      supabase
-        .from('cart_items')
-        .delete()
-        .eq('user_id', user.id)
-        .then()
-    }
     toast.info("Cart cleared")
+
+    if (user) {
+      try {
+        await supabase.from('cart_items')
+          .delete()
+          .eq('user_id', user.id)
+      } catch { /* ignore */ }
+    }
   }
 
   const totalAmount = items.reduce((total, item) => total + item.price * item.quantity, 0)
@@ -259,3 +241,4 @@ export function useCart() {
   }
   return context
 }
+
