@@ -157,7 +157,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     handleUserChange()
-  }, [user])
+  }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const MAX_QUANTITY = 20
 
