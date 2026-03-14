@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth, Address } from '@/context/auth-context'
 import { profileAPI } from '@/lib/profile-api'
 import styles from './address-management.module.css'
@@ -32,11 +32,7 @@ export default function AddressManagement() {
     is_default: false,
   })
 
-  useEffect(() => {
-    fetchAddresses()
-  }, [user])
-
-  const fetchAddresses = async () => {
+  const fetchAddresses = useCallback(async () => {
     if (!user) {
       setLoading(false)
       return
@@ -54,7 +50,11 @@ export default function AddressManagement() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    fetchAddresses()
+  }, [fetchAddresses])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target

@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import api from "@/lib/api"
 import supabase from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
@@ -343,23 +342,13 @@ export default function AdminDashboard() {
           })
 
         if (uploadError) {
-          // Fallback: try uploading via Express/Cloudinary
-          try {
-            const formData = new FormData()
-            formData.append("image", imageFile)
-            const { data: uploadData } = await api.post("/upload", formData, {
-              headers: { "Content-Type": "multipart/form-data" },
-            })
-            imageUrl = uploadData.url
-          } catch {
-            throw new Error("Image upload failed. Please check that Supabase Storage bucket 'food-images' exists or the Express server is running.")
-          }
-        } else {
-          const { data: publicUrlData } = supabase.storage
-            .from('food-images')
-            .getPublicUrl(filePath)
-          imageUrl = publicUrlData.publicUrl
+          throw new Error(`Image upload failed: ${uploadError.message}. Make sure Supabase Storage bucket 'food-images' exists and is set to public.`)
         }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('food-images')
+          .getPublicUrl(filePath)
+        imageUrl = publicUrlData.publicUrl
       }
 
       const payload = {

@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Package, ShoppingCart, Check, ChefHat, Truck, CircleX } from "lucide-react"
 import { OrderCardSkeleton } from "@/components/skeleton-loaders"
-import Link from "next/link"
 import { EmptyOrders } from "@/components/empty-states"
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh"
 import supabase from "@/lib/supabase"
@@ -182,6 +181,18 @@ export default function OrdersPage() {
     })
   }
 
+  const refreshOrders = useCallback(async () => {
+    if (!user) return
+    const { data } = await supabase
+      .from('orders')
+      .select('*, order_items(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    if (data) setOrders(data)
+  }, [user])
+
+  const { pullIndicatorRef, isRefreshing } = usePullToRefresh({ onRefresh: refreshOrders })
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 md:px-6 py-10 max-w-4xl">
@@ -197,18 +208,6 @@ export default function OrdersPage() {
       </div>
     )
   }
-
-  const refreshOrders = useCallback(async () => {
-    if (!user) return
-    const { data } = await supabase
-      .from('orders')
-      .select('*, order_items(*)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-    if (data) setOrders(data)
-  }, [user])
-
-  const { pullIndicatorRef, isRefreshing } = usePullToRefresh({ onRefresh: refreshOrders })
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-10 max-w-4xl relative">
