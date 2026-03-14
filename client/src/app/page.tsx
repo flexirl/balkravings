@@ -10,10 +10,10 @@ import Script from "next/script";
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Restaurant",
-  name: "Kravings by ARF",
-  alternateName: "Addis Royal Food Cloud Kitchen",
+  name: "Kravings Kitchen by ARF",
+  alternateName: ["Kravings by ARF", "Addis Royal Food Cloud Kitchen", "Kravings Kitchen"],
   description:
-    "Premium cloud kitchen delivering fresh, affordable meals to KIIT students in Bhubaneswar. Biryanis, combos, parathas & more delivered in 20 minutes. Open till 1 AM.",
+    "Premium cloud kitchen delivering fresh, affordable meals across KIIT, Patia, Chandrasekharpur & nearby areas in Bhubaneswar. Biryanis, combos, parathas & more delivered in 20 minutes. Open till 1 AM.",
   url: "https://www.kravingskitchen.in",
   telephone: "+919876543210",
   servesCuisine: ["Indian", "North Indian", "Biryani", "Fast Food"],
@@ -36,6 +36,12 @@ const jsonLd = {
     { "@type": "Place", name: "KIIT University, Patia, Bhubaneswar" },
     { "@type": "Place", name: "Patia, Bhubaneswar" },
     { "@type": "Place", name: "KIIT Square, Bhubaneswar" },
+    { "@type": "Place", name: "Chandrasekharpur, Bhubaneswar" },
+    { "@type": "Place", name: "SOA University, Bhubaneswar" },
+    { "@type": "Place", name: "ITER, Bhubaneswar" },
+    { "@type": "Place", name: "Silicon Institute of Technology, Bhubaneswar" },
+    { "@type": "Place", name: "Infocity, Bhubaneswar" },
+    { "@type": "Place", name: "Nandan Vihar, Patia, Bhubaneswar" },
   ],
   parentOrganization: {
     "@type": "Organization",

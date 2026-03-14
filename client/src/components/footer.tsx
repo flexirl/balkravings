@@ -17,7 +17,7 @@ export function Footer() {
               </div>
             </Link>
             <p className="text-muted-foreground text-sm mb-6 max-w-xs">
-              Premium cloud kitchen serving hot, hygiene-first, and chef-crafted meals exclusively for KIIT students and nearby residents.
+              Premium cloud kitchen serving hot, hygiene-first, and chef-crafted meals for students & professionals across KIIT, Patia & nearby areas in Bhubaneswar.
             </p>
             <div className="flex items-center gap-4">
               <Link href="https://instagram.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
@@ -59,7 +59,14 @@ export function Footer() {
             <ul className="space-y-4">
               <li className="flex items-start gap-3">
                 <MapPin className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                <span className="text-sm text-muted-foreground">Your Neighborhood - Near KIIT University, Patia, Bhubaneswar, Odisha 751024</span>
+                <a
+                  href="https://maps.app.goo.gl/search/?q=Addis+Royal+Food,+KIIT+Road,+Patia,+Bhubaneswar"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Near Royal Enfield Showroom, KIIT Road, Patia,<br />Bhubaneswar, Odisha 751024
+                </a>
               </li>
               <li className="flex items-center gap-3">
                 <Phone className="h-5 w-5 text-primary shrink-0" />

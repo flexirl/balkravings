@@ -27,22 +27,40 @@ const bebneue = Bebas_Neue({
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.kravingskitchen.in"),
   title: {
-    default: "Kravings by ARF — Late Night Food Delivery Near KIIT, Bhubaneswar",
-    template: "%s | Kravings by ARF",
+    default: "Kravings Kitchen by ARF — Late Night Food Delivery in KIIT & Nearby Areas, Bhubaneswar",
+    template: "%s | Kravings Kitchen by ARF",
   },
   description:
-    "Order biryanis, combos, parathas & more from Kravings by ARF — a premium cloud kitchen delivering fresh, affordable meals to KIIT students in 20 minutes. Open till 1 AM!",
+    "Kravings Kitchen — order biryanis, combos, parathas & more. Premium cloud kitchen delivering fresh, affordable meals across KIIT, Patia, Chandrasekharpur & nearby areas in Bhubaneswar. Fast delivery, open till 1 AM!",
   keywords: [
-    "food delivery near KIIT",
-    "cloud kitchen Bhubaneswar",
-    "late night food delivery KIIT",
-    "biryani near KIIT",
+    "Kravings Kitchen",
+    "Kravings Kitchen KIIT",
     "Kravings by ARF",
+    "Kravings Kitchen Bhubaneswar",
+    "kravingskitchen",
+    "food delivery near KIIT",
+    "food delivery Patia",
+    "food delivery Chandrasekharpur",
+    "cloud kitchen Bhubaneswar",
+    "late night food delivery Bhubaneswar",
+    "biryani near KIIT",
     "KIIT food delivery",
     "midnight food delivery Bhubaneswar",
-    "affordable food KIIT",
-    "Patia food delivery",
+    "affordable food Patia Bhubaneswar",
+    "Addis Royal Food",
+    "ARF cloud kitchen",
+    "food delivery KIIT Road",
+    "food delivery near SOA University",
+    "food delivery near Silicon Institute",
+    "late night food Patia",
+    "food near ITER Bhubaneswar",
   ],
+  other: {
+    "geo.region": "IN-OR",
+    "geo.placename": "Patia, Bhubaneswar, Odisha",
+    "geo.position": "20.3543;85.8145",
+    "ICBM": "20.3543, 85.8145",
+  },
   verification: {
     google: "p3_3bLcmpm5R6P-uIWVZxqCqn8QUsi2f-IQ63c2ndJ4",
   },
@@ -50,17 +68,17 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   openGraph: {
-    title: "Kravings by ARF — Late Night Food Delivery Near KIIT",
+    title: "Kravings Kitchen by ARF — Food Delivery in KIIT & Nearby Areas",
     description:
-      "Order biryanis, combos & more. Fresh, affordable meals delivered in 20 minutes to KIIT students. Open till 1 AM!",
+      "Kravings Kitchen — order biryanis, combos & more. Fresh, affordable meals delivered in 20 mins across KIIT, Patia & Bhubaneswar. Open till 1 AM!",
     url: "https://www.kravingskitchen.in",
-    siteName: "Kravings by ARF",
+    siteName: "Kravings Kitchen by ARF",
     images: [
       {
         url: "/og-image.jpg",
         width: 1200,
         height: 630,
-        alt: "Kravings by ARF — Cloud Kitchen for KIIT Students",
+        alt: "Kravings Kitchen by ARF — Cloud Kitchen in Patia, Bhubaneswar",
       },
     ],
     locale: "en_IN",
@@ -68,9 +86,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Kravings by ARF — Late Night Food Delivery Near KIIT",
+    title: "Kravings Kitchen by ARF — Food Delivery in KIIT & Nearby Areas",
     description:
-      "Order biryanis, combos & more. Delivered in 20 mins near KIIT, Bhubaneswar.",
+      "Kravings Kitchen — biryanis, combos & more. Delivered in 20 mins across KIIT, Patia & nearby areas in Bhubaneswar.",
     images: ["/og-image.jpg"],
   },
   robots: {
