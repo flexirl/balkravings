@@ -36,23 +36,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // ───── Helpers ─────
 
   const fetchServerCart = useCallback(async (): Promise<CartItem[]> => {
+    console.log("Fetching server cart...")
     const { data, error } = await supabase
       .from('cart_items')
       .select('food_id, quantity, foods(name, price, image)')
       .order('created_at', { ascending: true })
 
-    if (error || !data) return []
+    if (error) {
+      console.error("Fetch cart error:", error)
+      return []
+    }
+    
+    if (!data) return []
 
-    return data.map((item: Record<string, unknown>) => {
-      const food = item.foods as Record<string, unknown> | null
-      return {
-        foodId: item.food_id as string,
-        name: (food?.name as string) || '',
-        price: Number(food?.price) || 0,
-        image: (food?.image as string) || '',
-        quantity: item.quantity as number,
-      }
-    })
+    console.log("Server cart rows:", data.length)
+
+    // Filter out items where the linked food no longer exists (e.g. deleted from admin)
+    const validItems = data
+      .filter((item: any) => item.foods !== null)
+      .map((item: any) => {
+        const food = item.foods
+        return {
+          foodId: item.food_id as string,
+          name: (food?.name as string) || '',
+          price: Number(food?.price) || 0,
+          image: (food?.image as string) || '',
+          quantity: item.quantity as number,
+        }
+      })
+    
+    console.log("Processed server items:", validItems.length)
+    return validItems
   }, [])
 
   const pushLocalCartToServer = useCallback(async (localItems: CartItem[], userId: string) => {
@@ -131,34 +145,51 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const MAX_QUANTITY = 20
 
   const addToCart = async (newItem: CartItem) => {
+    let finalQty = newItem.quantity
+    let isNew = true
+
     setItems(prevItems => {
       const existingItem = prevItems.find(i => i.foodId === newItem.foodId)
 
       if (existingItem) {
+        isNew = false
         const newQty = Math.min(existingItem.quantity + newItem.quantity, MAX_QUANTITY)
         if (newQty === existingItem.quantity) {
           toast.error(`Maximum ${MAX_QUANTITY} items allowed`)
+          finalQty = existingItem.quantity
           return prevItems
         }
         toast.success("Item quantity updated")
+        finalQty = newQty
         return prevItems.map(i =>
           i.foodId === newItem.foodId ? { ...i, quantity: newQty } : i
         )
       } else {
         toast.success("Added to cart")
-        return [...prevItems, { ...newItem, quantity: Math.min(newItem.quantity, MAX_QUANTITY) }]
+        finalQty = Math.min(newItem.quantity, MAX_QUANTITY)
+        return [...prevItems, { ...newItem, quantity: finalQty }]
       }
     })
 
-    // Sync to server outside of setItems to avoid closure issues
+    // Sync to server with the correct total quantity
     if (user) {
+      console.log(`Syncing item ${newItem.foodId} with qty ${finalQty} to server...`)
       try {
-        await supabase.from('cart_items').upsert({
+        const { error } = await supabase.from('cart_items').upsert({
           user_id: user.id,
           food_id: newItem.foodId,
-          quantity: newItem.quantity,
+          quantity: finalQty,
         }, { onConflict: 'user_id,food_id' })
-      } catch { /* ignore */ }
+        
+        if (error) {
+          console.error("Cart sync error:", error)
+          toast.error("Failed to sync cart to server")
+        } else {
+          console.log("Cart sync successful")
+        }
+      } catch (error) {
+        console.error("Cart sync exception:", error)
+      }
     }
   }
 
@@ -167,12 +198,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     toast.info("Item removed from cart")
 
     if (user) {
+      console.log(`Removing item ${foodId} from server cart...`)
       try {
-        await supabase.from('cart_items')
+        const { error } = await supabase.from('cart_items')
           .delete()
           .eq('user_id', user.id)
           .eq('food_id', foodId)
-      } catch { /* ignore */ }
+        
+        if (error) {
+          console.error("Remove item error:", error)
+          toast.error("Failed to remove item from server")
+        } else {
+          console.log("Item removed from server successfully")
+        }
+      } catch (error) {
+        console.error("Remove item exception:", error)
+      }
     }
   }
 
@@ -191,12 +232,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     )
 
     if (user) {
+      console.log(`Updating item ${foodId} qty to ${quantity} on server...`)
       try {
-        await supabase.from('cart_items')
+        const { error } = await supabase.from('cart_items')
           .update({ quantity })
           .eq('user_id', user.id)
           .eq('food_id', foodId)
-      } catch { /* ignore */ }
+        
+        if (error) {
+          console.error("Update quantity error:", error)
+          toast.error("Failed to update quantity on server")
+        } else {
+          console.log("Quantity updated on server successfully")
+        }
+      } catch (error) {
+        console.error("Update quantity exception:", error)
+      }
     }
   }
 
@@ -205,11 +256,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     toast.info("Cart cleared")
 
     if (user) {
+      console.log("Clearing server cart...")
       try {
-        await supabase.from('cart_items')
+        const { error } = await supabase.from('cart_items')
           .delete()
           .eq('user_id', user.id)
-      } catch { /* ignore */ }
+        
+        if (error) {
+          console.error("Clear cart error:", error)
+          toast.error("Failed to clear cart on server")
+        } else {
+          console.log("Server cart cleared successfully")
+        }
+      } catch (error) {
+        console.error("Clear cart exception:", error)
+      }
     }
   }
 
