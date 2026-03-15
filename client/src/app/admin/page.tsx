@@ -63,6 +63,10 @@ import {
   Tag,
   Edit2,
   Search,
+  Ban,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
 } from "lucide-react"
 import { DashboardStatsSkeleton, AdminOrderSkeleton, AdminFoodSkeleton } from "@/components/skeleton-loaders"
 
@@ -81,6 +85,7 @@ interface Food {
 interface OrderItem { name: string; quantity: number; price: number }
 interface Order {
   id: string
+  user_id?: string
   customer_name: string
   customer_phone: string
   order_items: OrderItem[]
@@ -477,6 +482,90 @@ export default function AdminDashboard() {
       toast.error("Failed to update order")
     }
   }
+
+  // Anti-spam: Compute trust score for an order
+  const getOrderTrustScore = (order: Order): { level: 'trusted' | 'review' | 'suspicious'; reasons: string[] } => {
+    const reasons: string[] = []
+    const userId = order.user_id
+
+    if (userId) {
+      // Count orders by same user in the last hour
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+      const recentByUser = orders.filter(
+        o => o.user_id === userId && new Date(o.created_at) > oneHourAgo
+      ).length
+      if (recentByUser >= 3) reasons.push(`${recentByUser} orders in last hour`)
+
+      // Count cancelled orders by same user
+      const cancelledByUser = orders.filter(
+        o => o.user_id === userId && o.order_status === 'cancelled'
+      ).length
+      if (cancelledByUser >= 3) reasons.push(`${cancelledByUser} cancelled orders`)
+    }
+
+    // Check same phone across different accounts
+    if (order.customer_phone) {
+      const phoneMappings = new Set(
+        orders
+          .filter(o => o.customer_phone === order.customer_phone && o.user_id)
+          .map(o => o.user_id)
+      )
+      if (phoneMappings.size > 1) reasons.push('Phone used by multiple accounts')
+    }
+
+    if (reasons.length >= 2) return { level: 'suspicious', reasons }
+    if (reasons.length === 1) return { level: 'review', reasons }
+    return { level: 'trusted', reasons: [] }
+  }
+
+  // Anti-spam: Block/Unblock a user
+  const handleToggleBlockUser = async (userId: string, currentlyBlocked: boolean, customerName: string) => {
+    if (currentlyBlocked) {
+      // Unblock
+      if (!confirm(`Unblock ${customerName}? They will be able to place orders again.`)) return
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ is_blocked: false, block_reason: null })
+          .eq('id', userId)
+        if (error) throw error
+        setBlockedUsers(prev => { const next = new Set(prev); next.delete(userId); return next })
+        toast.success(`${customerName} has been unblocked`)
+      } catch {
+        toast.error('Failed to unblock user')
+      }
+    } else {
+      // Block
+      const reason = prompt(`Block ${customerName}? Enter a reason (optional):`, 'Suspicious order activity')
+      if (reason === null) return // cancelled
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ is_blocked: true, block_reason: reason || 'Blocked by admin' })
+          .eq('id', userId)
+        if (error) throw error
+        setBlockedUsers(prev => new Set(prev).add(userId))
+        toast.success(`${customerName} has been blocked`)
+      } catch {
+        toast.error('Failed to block user')
+      }
+    }
+  }
+
+  // Check if a user is blocked (from profiles cache or quick lookup)
+  const [blockedUsers, setBlockedUsers] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const fetchBlockedUsers = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('is_blocked', true)
+        if (data) setBlockedUsers(new Set(data.map(p => p.id)))
+      } catch { /* ignore */ }
+    }
+    if (user?.role === 'admin') fetchBlockedUsers()
+  }, [user])
 
   // Fetch settings
   useEffect(() => {
@@ -993,19 +1082,48 @@ export default function AdminDashboard() {
             return (
             <div className="space-y-4">
               {filtered.map((order) => (
-                <Card key={order.id} className="bg-card border-border">
+                <Card key={order.id} className={`bg-card border-border ${
+                  blockedUsers.has(order.user_id || '') ? 'border-destructive/40 bg-destructive/5' : ''
+                }`}>
                   <CardContent className="pt-5 pb-4">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       <div className="flex-1">
-                        {/* Customer info */}
+                        {/* Customer info + trust score */}
                         <div className="flex items-center gap-3 mb-3">
                           <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
                             {(order.customer_name || "?").charAt(0).toUpperCase()}
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate">
-                              {order.customer_name || "Guest"}
-                            </p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold truncate">
+                                {order.customer_name || "Guest"}
+                              </p>
+                              {/* Trust Score Badge */}
+                              {(() => {
+                                const trust = getOrderTrustScore(order)
+                                if (trust.level === 'suspicious') return (
+                                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 font-semibold" title={trust.reasons.join(', ')}>
+                                    <ShieldX className="h-3 w-3" /> Suspicious
+                                  </span>
+                                )
+                                if (trust.level === 'review') return (
+                                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold" title={trust.reasons.join(', ')}>
+                                    <ShieldAlert className="h-3 w-3" /> Review
+                                  </span>
+                                )
+                                return (
+                                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-medium">
+                                    <ShieldCheck className="h-3 w-3" /> Trusted
+                                  </span>
+                                )
+                              })()}
+                              {/* Blocked badge */}
+                              {blockedUsers.has(order.user_id || '') && (
+                                <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-destructive/15 text-destructive font-semibold">
+                                  <Ban className="h-3 w-3" /> Blocked
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -1069,6 +1187,24 @@ export default function AdminDashboard() {
                           <option value="delivered">Delivered</option>
                           <option value="cancelled">Cancelled</option>
                         </select>
+                        {/* Block/Unblock User Button — only for non-trusted or already-blocked users */}
+                        {order.user_id && (getOrderTrustScore(order).level !== 'trusted' || blockedUsers.has(order.user_id)) && (
+                          <button
+                            onClick={() => handleToggleBlockUser(
+                              order.user_id!,
+                              blockedUsers.has(order.user_id!),
+                              order.customer_name || 'User'
+                            )}
+                            className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg transition-colors ${
+                              blockedUsers.has(order.user_id!)
+                                ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                                : 'bg-destructive/10 text-destructive hover:bg-destructive/20'
+                            }`}
+                          >
+                            <Ban className="h-3 w-3" />
+                            {blockedUsers.has(order.user_id!) ? 'Unblock' : 'Block User'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </CardContent>

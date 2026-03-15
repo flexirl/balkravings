@@ -4,9 +4,23 @@ import morgan from 'morgan';
 
 const app: Application = express();
 
-// CORS — allow Vercel frontend + localhost
+// CORS — only allow your website and localhost (dev)
+const allowedOrigins = [
+  'https://www.kravingskitchen.in',
+  'https://kravingskitchen.in',
+  'http://localhost:3000',
+  'http://localhost:3001',
+];
+
 const corsOptions: cors.CorsOptions = {
-  origin: true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
