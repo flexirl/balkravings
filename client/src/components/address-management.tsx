@@ -12,6 +12,7 @@ export default function AddressManagement() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [pinError, setPinError] = useState('')
   const [formData, setFormData] = useState<{
     type: 'home' | 'work' | 'other';
     street: string;
@@ -69,6 +70,14 @@ export default function AddressManagement() {
     setMessage(null)
 
     if (!user) return
+
+    // Validate Bhubaneswar PIN code
+    const pin = formData.postal_code.trim()
+    if (!/^\d{6}$/.test(pin) || !(pin.startsWith('751') || pin.startsWith('752'))) {
+      setMessage({ type: 'error', text: 'We only deliver within Bhubaneswar (PIN codes 751xxx / 752xxx)' })
+      return
+    }
+
     try {
       let updatedAddresses
       if (editingId) {
@@ -287,11 +296,31 @@ export default function AddressManagement() {
                 id="postal_code"
                 name="postal_code"
                 value={formData.postal_code}
-                onChange={handleChange}
-                placeholder="Postal code"
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '')
+                  setFormData(prev => ({ ...prev, postal_code: val }))
+                  if (val.length === 6) {
+                    setPinError((val.startsWith('751') || val.startsWith('752')) ? '' : 'We only deliver in Bhubaneswar')
+                  } else {
+                    setPinError('')
+                  }
+                }}
+                placeholder="e.g. 751024"
+                maxLength={6}
                 className={styles.input}
+                style={pinError ? { borderColor: 'var(--destructive, #ef4444)' } : undefined}
                 required
               />
+              {pinError && (
+                <p style={{ color: 'var(--destructive, #ef4444)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                  ⚠ {pinError}
+                </p>
+              )}
+              {formData.postal_code.length === 6 && !pinError && (
+                <p style={{ color: '#4ade80', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                  ✓ Bhubaneswar
+                </p>
+              )}
             </div>
 
             <div className={styles.formGroup}>
