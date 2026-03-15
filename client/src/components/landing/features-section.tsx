@@ -3,8 +3,8 @@ import { Timer, ShieldCheck, IndianRupee, Moon } from "lucide-react";
 const FEATURES = [
   {
     icon: Timer,
-    title: "20-Min Delivery Around KIIT",
-    desc: "We prioritize KIIT area. Hunger shouldn't wait, and neither should you.",
+    title: "20-Min Delivery in KIIT & Nearby Areas",
+    desc: "We deliver across Patia, Chandrasekharpur & KIIT. Hunger shouldn't wait, and neither should you.",
   },
   {
     icon: ShieldCheck,

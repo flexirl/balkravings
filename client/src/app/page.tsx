@@ -5,6 +5,7 @@ import { OffersSection } from "@/components/landing/offers-section";
 import { TestimonialsSection } from "@/components/landing/testimonials-section";
 import { CtaSection } from "@/components/landing/cta-section";
 import {AboutUs} from "@/components/landing/about";
+import { PromoBanner } from "@/components/promo-banner";
 import Script from "next/script";
 
 const jsonLd = {
@@ -90,6 +91,7 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <HeroSection />
+      <PromoBanner />
       <FeaturesSection />
       <BestSellersSection />
       <OffersSection />

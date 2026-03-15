@@ -29,7 +29,7 @@ export function CtaSection() {
           </h3>
 
           <p className="mt-6 text-base sm:text-lg text-black/80 max-w-lg leading-relaxed">
-            Join hundreds of KIIT students who have upgraded their late-night
+            Join hundreds of students & locals who have upgraded their late-night
             food game. Hot, fresh, and delivered in minutes.
           </p>
 

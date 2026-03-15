@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { WhatsAppFloat } from "@/components/whatsapp-float";
 
 import { Galindo } from "next/font/google";
 
@@ -104,11 +105,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="apple-mobile-web-app-title" content="kravings" />
+      </head>
       <body className={`${inter.variable} ${bebneue.variable}  ${galindo.variable} min-h-screen bg-background font-sans antialiased`}>
         <Providers>
           <Navbar />
           <main className="flex-1">{children}</main>
           <Footer />
+          <WhatsAppFloat />
         </Providers>
       </body>
     </html>

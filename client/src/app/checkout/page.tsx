@@ -49,6 +49,7 @@ export default function CheckoutPage() {
   const [couponDiscount, setCouponDiscount] = useState(0)
   const [couponApplied, setCouponApplied] = useState("")
   const [couponLoading, setCouponLoading] = useState(false)
+  const [couponFreebie, setCouponFreebie] = useState("")
 
   // Auto-fill from selected address
   useEffect(() => {
@@ -150,21 +151,30 @@ export default function CheckoutPage() {
         return
       }
 
-      // Calculate discount
-      let discount = 0
-      if (coupon.discount_type === 'percent') {
-        discount = Math.round(totalAmount * (coupon.discount_value / 100))
-        if (coupon.max_discount > 0) discount = Math.min(discount, coupon.max_discount)
+      // Handle freebie vs discount
+      if (coupon.reward_type === 'freebie') {
+        setCouponDiscount(0)
+        setCouponFreebie(coupon.freebie_name || 'Free item')
+        setCouponApplied(coupon.code)
+        toast.success(`🎁 Free ${coupon.freebie_name} added to your order!`)
       } else {
-        discount = coupon.discount_value
+        // Calculate discount
+        let discount = 0
+        if (coupon.discount_type === 'percent') {
+          discount = Math.round(totalAmount * (coupon.discount_value / 100))
+          if (coupon.max_discount > 0) discount = Math.min(discount, coupon.max_discount)
+        } else {
+          discount = coupon.discount_value
+        }
+        setCouponDiscount(discount)
+        setCouponFreebie("")
+        setCouponApplied(coupon.code)
+        toast.success(`Coupon applied! ₹${discount} off`)
       }
-
-      setCouponDiscount(discount)
-      setCouponApplied(coupon.code)
-      toast.success(`Coupon applied! ₹${discount} off`)
     } catch {
       toast.error("Failed to apply coupon")
       setCouponDiscount(0)
+      setCouponFreebie("")
       setCouponApplied("")
     } finally {
       setCouponLoading(false)
@@ -175,6 +185,7 @@ export default function CheckoutPage() {
     setCouponCode("")
     setCouponDiscount(0)
     setCouponApplied("")
+    setCouponFreebie("")
   }
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -199,10 +210,12 @@ export default function CheckoutPage() {
     }
     if (!phone || !/^\d{10}$/.test(phone.replace(/\s/g, ''))) {
       toast.error("Please enter a valid 10-digit phone number")
+      document.getElementById('phone')?.focus()
       return
     }
     if (!address.trim()) {
       toast.error("Please enter your delivery address")
+      document.getElementById('address')?.focus()
       return
     }
 
@@ -222,6 +235,7 @@ export default function CheckoutPage() {
           customer_phone: phone,
           phone_verified: true,
           payment_method: 'cod',
+          freebie_item: couponFreebie || null,
         })
         .select()
         .single()
@@ -348,13 +362,13 @@ export default function CheckoutPage() {
                   <Label className="text-sm flex items-center gap-1.5">
                     <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Select Address
                   </Label>
-                  <div className="grid gap-2">
+                  <div className="grid gap-2 overflow-hidden">
                     {savedAddresses.map((addr) => {
                       const formatted = [addr.street, addr.city, addr.state, addr.postal_code].filter(Boolean).join(", ")
                       return (
                         <label
                           key={addr.id}
-                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all overflow-hidden ${
                             selectedAddressId === addr.id
                               ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
                               : "border-border bg-secondary/30 hover:border-border/80"
@@ -376,7 +390,7 @@ export default function CheckoutPage() {
                                 <span className="text-[10px] text-primary font-medium">Default</span>
                               )}
                             </div>
-                            <p className="text-sm text-muted-foreground mt-1 truncate">{formatted}</p>
+                            <p className="text-sm text-muted-foreground mt-1 break-words">{formatted}</p>
                             {addr.phone_number && (
                               <p className="text-xs text-muted-foreground mt-0.5">📞 {addr.phone_number}</p>
                             )}
@@ -504,7 +518,10 @@ export default function CheckoutPage() {
                 ) : (
                   <div className="flex justify-between items-center bg-green-500/10 rounded-lg px-3 py-2">
                     <span className="text-green-400 text-xs font-medium">
-                      🎉 {couponApplied} applied — ₹{couponDiscount} off
+                      {couponFreebie
+                        ? `🎁 ${couponApplied} applied — Free ${couponFreebie}!`
+                        : `🎉 ${couponApplied} applied — ₹${couponDiscount} off`
+                      }
                     </span>
                     <button
                       type="button"
@@ -513,6 +530,12 @@ export default function CheckoutPage() {
                     >
                       Remove
                     </button>
+                  </div>
+                )}
+
+                {couponFreebie && (
+                  <div className="flex items-center gap-2 bg-green-500/10 rounded-lg px-3 py-2">
+                    <span className="text-green-500 text-sm font-medium">🎁 Free {couponFreebie} with your order!</span>
                   </div>
                 )}
 

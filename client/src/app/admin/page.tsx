@@ -20,6 +20,8 @@ interface AppSettings {
   free_delivery_above: number
   is_store_open: boolean
   store_opens_at: string | null
+  banner_image: string | null
+  banner_enabled: boolean
 }
 
 interface Coupon {
@@ -33,7 +35,20 @@ interface Coupon {
   used_count: number
   is_active: boolean
   expires_at: string | null
+  reward_type: "discount" | "freebie"
+  freebie_name: string | null
 }
+import { Megaphone } from "lucide-react"
+
+interface OfferCard {
+  id: string
+  position: number
+  title: string
+  description: string
+  coupon_code: string | null
+  cta_text: string
+}
+
 import {
   Package,
   IndianRupee,
@@ -75,6 +90,7 @@ interface Order {
   payment_method: string
   created_at: string
   delivery_address?: string
+  freebie_item?: string
 }
 
 interface Stats {
@@ -158,7 +174,7 @@ export default function AdminDashboard() {
   const [orderStatusFilter, setOrderStatusFilter] = useState("all")
 
   // Settings
-  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, gst_percent: 5, free_delivery_above: 0, is_store_open: true, store_opens_at: null })
+  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, gst_percent: 5, free_delivery_above: 0, is_store_open: true, store_opens_at: null, banner_image: null, banner_enabled: false })
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
 
@@ -169,13 +185,20 @@ export default function AdminDashboard() {
   const [couponSaving, setCouponSaving] = useState(false)
   const [newCoupon, setNewCoupon] = useState({
     code: "",
+    rewardType: "discount" as "discount" | "freebie",
     discountType: "percent" as "percent" | "flat",
     discountValue: "",
     minOrder: "",
     maxDiscount: "",
     usageLimit: "",
     expiresAt: "",
+    freebieName: "",
   })
+
+  // Offer Cards
+  const [offerCards, setOfferCards] = useState<OfferCard[]>([])
+  const [offerCardsLoading, setOfferCardsLoading] = useState(true)
+  const [offerSaving, setOfferSaving] = useState<number | null>(null)
 
   // Auth guard
   useEffect(() => {
@@ -487,6 +510,23 @@ export default function AdminDashboard() {
     if (user?.role === "admin") fetchCoupons()
   }, [user])
 
+  // Fetch offer cards
+  useEffect(() => {
+    const fetchOfferCards = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('offer_cards')
+          .select('*')
+          .order('position', { ascending: true })
+        if (error) throw error
+        setOfferCards(data || [])
+      } catch { /* ignore */ } finally {
+        setOfferCardsLoading(false)
+      }
+    }
+    if (user?.role === "admin") fetchOfferCards()
+  }, [user])
+
   if (authLoading || !user || user.role !== "admin") {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -519,22 +559,31 @@ export default function AdminDashboard() {
     e.preventDefault()
     setCouponSaving(true)
     try {
+      const insertPayload: Record<string, unknown> = {
+        code: newCoupon.code.toUpperCase(),
+        reward_type: newCoupon.rewardType,
+        min_order: newCoupon.minOrder ? parseFloat(newCoupon.minOrder) : 0,
+        usage_limit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 0,
+        expires_at: newCoupon.expiresAt || null,
+      }
+      if (newCoupon.rewardType === 'freebie') {
+        insertPayload.freebie_name = newCoupon.freebieName
+        insertPayload.discount_type = 'flat'
+        insertPayload.discount_value = 0
+        insertPayload.max_discount = 0
+      } else {
+        insertPayload.discount_type = newCoupon.discountType
+        insertPayload.discount_value = parseFloat(newCoupon.discountValue)
+        insertPayload.max_discount = newCoupon.maxDiscount ? parseFloat(newCoupon.maxDiscount) : 0
+      }
       const { data, error } = await supabase
         .from('coupons')
-        .insert({
-          code: newCoupon.code.toUpperCase(),
-          discount_type: newCoupon.discountType,
-          discount_value: parseFloat(newCoupon.discountValue),
-          min_order: newCoupon.minOrder ? parseFloat(newCoupon.minOrder) : 0,
-          max_discount: newCoupon.maxDiscount ? parseFloat(newCoupon.maxDiscount) : 0,
-          usage_limit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 0,
-          expires_at: newCoupon.expiresAt || null,
-        })
+        .insert(insertPayload)
         .select()
         .single()
       if (error) throw error
       setCoupons((prev) => [data, ...prev])
-      setNewCoupon({ code: "", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "" })
+      setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "", freebieName: "" })
       setShowCouponForm(false)
       toast.success("Coupon created!")
     } catch (error: unknown) {
@@ -542,6 +591,27 @@ export default function AdminDashboard() {
       toast.error(err.message || "Failed to create coupon")
     } finally {
       setCouponSaving(false)
+    }
+  }
+
+  const handleSaveOfferCard = async (card: OfferCard) => {
+    setOfferSaving(card.position)
+    try {
+      const { error } = await supabase
+        .from('offer_cards')
+        .update({
+          title: card.title,
+          description: card.description,
+          coupon_code: card.coupon_code || null,
+          cta_text: card.cta_text,
+        })
+        .eq('id', card.id)
+      if (error) throw error
+      toast.success(`Offer card ${card.position} saved!`)
+    } catch {
+      toast.error("Failed to save offer card")
+    } finally {
+      setOfferSaving(null)
     }
   }
 
@@ -562,7 +632,7 @@ export default function AdminDashboard() {
 
       {/* Mobile Tab Navigation — only shows on small screens */}
       <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
-        {(["dashboard", "orders", "foods", "settings", "coupons"] as const).map((tab) => (
+        {(["dashboard", "orders", "foods", "settings", "coupons", "offers"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -970,6 +1040,11 @@ export default function AdminDashboard() {
                               {item.quantity}× {item.name} — ₹{item.price * item.quantity}
                             </p>
                           ))}
+                          {order.freebie_item && (
+                            <p className="text-xs text-green-500 font-medium">
+                              🎁 Free {order.freebie_item}
+                            </p>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-2 ml-12">
                           {new Date(order.created_at).toLocaleString("en-IN")}
@@ -1129,6 +1204,88 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   </div>
+
+                  <Separator className="bg-border" />
+
+                  {/* Promo Banner */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Promo Banner (Homepage Popup)</h3>
+                    <div className="flex items-center gap-4">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={appSettings.banner_enabled}
+                          onChange={async () => {
+                            const newVal = !appSettings.banner_enabled
+                            setAppSettings({ ...appSettings, banner_enabled: newVal })
+                            try {
+                              await supabase.from('settings').update({ banner_enabled: newVal }).eq('id', appSettings.id || '')
+                              toast.success(newVal ? "Banner enabled" : "Banner disabled")
+                            } catch {
+                              toast.error("Failed to update")
+                              setAppSettings({ ...appSettings, banner_enabled: !newVal })
+                            }
+                          }}
+                        />
+                        <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                      </label>
+                      <span className={`text-sm font-medium ${appSettings.banner_enabled ? "text-green-400" : "text-muted-foreground"}`}>
+                        {appSettings.banner_enabled ? "Banner Active" : "Banner Off"}
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-4">
+                      <div className="space-y-2 flex-1">
+                        <Label className="text-sm">Banner Image</Label>
+                        <label className="flex items-center gap-2 h-10 px-3 rounded-xl bg-secondary border border-border cursor-pointer hover:border-primary/30 transition-colors">
+                          <ImagePlus className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground truncate">Upload poster image (4:5 ratio recommended)</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              try {
+                                const fileExt = file.name.split('.').pop()
+                                const fileName = `banner-${Date.now()}.${fileExt}`
+                                const filePath = `banners/${fileName}`
+                                const { error: uploadError } = await supabase.storage
+                                  .from('food-images')
+                                  .upload(filePath, file, { cacheControl: '3600', upsert: false })
+                                if (uploadError) throw uploadError
+                                const { data: publicUrlData } = supabase.storage.from('food-images').getPublicUrl(filePath)
+                                const url = publicUrlData.publicUrl
+                                setAppSettings({ ...appSettings, banner_image: url })
+                                await supabase.from('settings').update({ banner_image: url }).eq('id', appSettings.id || '')
+                                toast.success("Banner image uploaded!")
+                              } catch {
+                                toast.error("Failed to upload banner image")
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {appSettings.banner_image && (
+                        <div className="relative w-20 h-[100px] rounded-xl overflow-hidden border border-border flex-shrink-0">
+                          <Image src={appSettings.banner_image} alt="Banner preview" fill className="object-cover" unoptimized />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setAppSettings({ ...appSettings, banner_image: null })
+                              await supabase.from('settings').update({ banner_image: null }).eq('id', appSettings.id || '')
+                              toast.success("Banner image removed")
+                            }}
+                            className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-white flex items-center justify-center"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <Button
                     onClick={handleSaveSettings}
                     disabled={settingsSaving}
@@ -1171,12 +1328,37 @@ export default function AdminDashboard() {
                       <Label className="text-sm">Coupon Code</Label>
                       <Input
                         required
-                        placeholder="e.g. WELCOME20"
+                        placeholder="e.g. FREECOKE"
                         value={newCoupon.code}
                         onChange={(e) => setNewCoupon({ ...newCoupon, code: e.target.value.toUpperCase() })}
                         className="h-10 rounded-xl bg-secondary border-border uppercase"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Reward Type</Label>
+                      <select
+                        value={newCoupon.rewardType}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, rewardType: e.target.value as "discount" | "freebie" })}
+                        className="w-full h-10 px-3 rounded-xl bg-secondary border border-border text-sm"
+                      >
+                        <option value="discount">💰 Discount</option>
+                        <option value="freebie">🎁 Freebie</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {newCoupon.rewardType === "freebie" ? (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Freebie Item Name</Label>
+                      <Input
+                        required
+                        placeholder="e.g. 750ml Coca-Cola, Ice Cream"
+                        value={newCoupon.freebieName}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, freebieName: e.target.value })}
+                        className="h-10 rounded-xl bg-secondary border-border"
+                      />
+                    </div>
+                  ) : (
                     <div className="space-y-2">
                       <Label className="text-sm">Discount Type</Label>
                       <select
@@ -1188,21 +1370,23 @@ export default function AdminDashboard() {
                         <option value="flat">Flat Amount (₹)</option>
                       </select>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="grid gap-4 sm:grid-cols-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm">Discount Value</Label>
-                      <Input
-                        required
-                        type="number"
-                        min="1"
-                        placeholder={newCoupon.discountType === "percent" ? "e.g. 20" : "e.g. 50"}
-                        value={newCoupon.discountValue}
-                        onChange={(e) => setNewCoupon({ ...newCoupon, discountValue: e.target.value })}
-                        className="h-10 rounded-xl bg-secondary border-border"
-                      />
-                    </div>
+                  <div className={`grid gap-4 ${newCoupon.rewardType === 'freebie' ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
+                    {newCoupon.rewardType === "discount" && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">Discount Value</Label>
+                        <Input
+                          required
+                          type="number"
+                          min="1"
+                          placeholder={newCoupon.discountType === "percent" ? "e.g. 20" : "e.g. 50"}
+                          value={newCoupon.discountValue}
+                          onChange={(e) => setNewCoupon({ ...newCoupon, discountValue: e.target.value })}
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label className="text-sm">Min Order (₹)</Label>
                       <Input
@@ -1214,17 +1398,19 @@ export default function AdminDashboard() {
                         className="h-10 rounded-xl bg-secondary border-border"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm">Max Discount (₹)</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="0 = no cap"
-                        value={newCoupon.maxDiscount}
-                        onChange={(e) => setNewCoupon({ ...newCoupon, maxDiscount: e.target.value })}
-                        className="h-10 rounded-xl bg-secondary border-border"
-                      />
-                    </div>
+                    {newCoupon.rewardType === "discount" && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">Max Discount (₹)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="0 = no cap"
+                          value={newCoupon.maxDiscount}
+                          onChange={(e) => setNewCoupon({ ...newCoupon, maxDiscount: e.target.value })}
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label className="text-sm">Usage Limit</Label>
                       <Input
@@ -1289,9 +1475,12 @@ export default function AdminDashboard() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {coupon.discount_type === "percent" ? `${coupon.discount_value}% off` : `₹${coupon.discount_value} off`}
+                      {coupon.reward_type === "freebie"
+                        ? `🎁 Free ${coupon.freebie_name}`
+                        : coupon.discount_type === "percent" ? `${coupon.discount_value}% off` : `₹${coupon.discount_value} off`
+                      }
                       {coupon.min_order > 0 && ` · Min ₹${coupon.min_order}`}
-                      {coupon.max_discount > 0 && ` · Max ₹${coupon.max_discount}`}
+                      {coupon.reward_type === "discount" && coupon.max_discount > 0 && ` · Max ₹${coupon.max_discount}`}
                       {coupon.usage_limit > 0 && ` · ${coupon.used_count}/${coupon.usage_limit} used`}
                       {coupon.expires_at && ` · Expires ${new Date(coupon.expires_at).toLocaleDateString("en-IN")}`}
                     </p>
@@ -1305,6 +1494,102 @@ export default function AdminDashboard() {
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {/* ==================== OFFERS TAB ==================== */}
+      {activeTab === "offers" && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <Megaphone className="h-6 w-6 text-primary" /> Offer Cards
+            </h2>
+            <p className="text-muted-foreground text-sm mt-1">Edit the 3 offer cards shown on the homepage</p>
+          </div>
+
+          {offerCardsLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : offerCards.length === 0 ? (
+            <div className="text-center py-16">
+              <Megaphone className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">No offer cards found. Run the migration SQL first.</p>
+            </div>
+          ) : (
+            <div className="grid gap-6">
+              {offerCards.map((card) => (
+                <Card key={card.id} className="bg-card border-border">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xs font-bold bg-primary/10 text-primary px-2.5 py-1 rounded-lg">Card {card.position}</span>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Title</Label>
+                        <Input
+                          value={card.title}
+                          onChange={(e) => setOfferCards(prev => prev.map(c => c.id === card.id ? { ...c, title: e.target.value } : c))}
+                          placeholder="e.g. Flat 15% OFF"
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm">CTA Button Text</Label>
+                        <Input
+                          value={card.cta_text}
+                          onChange={(e) => setOfferCards(prev => prev.map(c => c.id === card.id ? { ...c, cta_text: e.target.value } : c))}
+                          placeholder="e.g. Claim Now →"
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Description</Label>
+                        <Input
+                          value={card.description}
+                          onChange={(e) => setOfferCards(prev => prev.map(c => c.id === card.id ? { ...c, description: e.target.value } : c))}
+                          placeholder="Offer description..."
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm">Coupon Code (optional, shown bold)</Label>
+                        <Input
+                          value={card.coupon_code || ""}
+                          onChange={(e) => setOfferCards(prev => prev.map(c => c.id === card.id ? { ...c, coupon_code: e.target.value || null } : c))}
+                          placeholder="e.g. KRAVINGS15"
+                          className="h-10 rounded-xl bg-secondary border-border uppercase"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 p-3 rounded-xl bg-secondary/50 border border-border">
+                      <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+                      <p className="text-sm font-display font-bold">{card.title}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {card.description}
+                        {card.coupon_code && (
+                          <>
+                            {" "}
+                            <span className="font-bold text-foreground bg-secondary px-1.5 py-0.5 rounded text-[11px]">{card.coupon_code}</span>
+                            {" at checkout."}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleSaveOfferCard(card)}
+                      disabled={offerSaving === card.position}
+                      className="mt-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-6 text-sm"
+                    >
+                      {offerSaving === card.position ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save Card {card.position}
+                    </Button>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}
