@@ -48,15 +48,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (existingItem) {
         const newQty = Math.min(existingItem.quantity + newItem.quantity, MAX_QUANTITY)
         if (newQty === existingItem.quantity) {
-          toast.error(`Maximum ${MAX_QUANTITY} items allowed`)
           return prevItems
         }
-        toast.success("Item quantity updated")
         return prevItems.map(i =>
           i.foodId === newItem.foodId ? { ...i, quantity: newQty } : i
         )
       } else {
-        toast.success("Added to cart")
         const finalQty = Math.min(newItem.quantity, MAX_QUANTITY)
         return [...prevItems, { ...newItem, quantity: finalQty }]
       }

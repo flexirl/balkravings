@@ -75,7 +75,7 @@ export default function CartPage() {
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-10">
-      <h1 className="text-3xl font-bold mt-12 mb-8 flex items-center gap-3">
+      <h1 className="text-3xl font-bold pt-20 mb-8 flex items-center gap-3">
         <ShoppingBag className=" h-7 w-7 text-primary" />
         Shopping Cart
         <span className="text-base font-normal text-muted-foreground">({items.length} items)</span>

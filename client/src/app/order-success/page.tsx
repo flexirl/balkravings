@@ -78,7 +78,7 @@ function OrderSuccessInner() {
 
             <div className="flex items-center gap-2 bg-primary/5 rounded-xl p-3 text-sm">
               <Package className="h-4 w-4 text-primary shrink-0" />
-              <span className="text-muted-foreground">Estimated delivery: <strong className="text-foreground">30-45 mins</strong></span>
+              <span className="text-muted-foreground">Estimated delivery: <strong className="text-foreground">15-20 mins</strong></span>
             </div>
           </div>
         )}
