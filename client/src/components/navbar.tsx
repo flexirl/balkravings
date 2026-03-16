@@ -7,6 +7,7 @@ import { Menu, X, ShoppingCart, LogOut } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useCart } from "@/context/cart-context";
 import { StoreBanner } from "./store-banner";
+import { LaunchBanner } from "./launch-banner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,6 +87,7 @@ export function Navbar() {
 
   return (
     <>
+      <LaunchBanner />
       <StoreBanner isStoreOpen={isStoreOpen} storeOpensAt={storeOpensAt} />
 
       <nav className="sticky top-0 z-50 w-full bg-background/90 backdrop-blur-md border-b border-border shadow-sm">

@@ -18,8 +18,8 @@ const FEATURES = [
   },
   {
     icon: Moon,
-    title: "Late Night Open (Till 1 AM)",
-    desc: "Got a late-night study session or gaming marathon? We've got your back till 1 AM.",
+    title: "Late Night & Midnight Cravings",
+    desc: "Got a late-night study session or gaming marathon? We've got your back when hunger strikes.",
   },
 ];
 

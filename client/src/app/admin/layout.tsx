@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, createContext, useContext, Suspense } from "react"
@@ -10,11 +11,15 @@ export type AdminTab = "dashboard" | "orders" | "foods" | "settings" | "coupons"
 interface AdminTabContextType {
   activeTab: AdminTab
   setActiveTab: (tab: AdminTab) => void
+  newOrderBadge: number
+  setNewOrderBadge: React.Dispatch<React.SetStateAction<number>>
 }
 
 const AdminTabContext = createContext<AdminTabContextType>({
   activeTab: "dashboard",
   setActiveTab: () => {},
+  newOrderBadge: 0,
+  setNewOrderBadge: () => {},
 })
 
 export const useAdminTab = () => useContext(AdminTabContext)
@@ -34,13 +39,17 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [newOrderBadge, setNewOrderBadge] = useState(0)
 
   // Derive active tab directly from URL (no useState sync needed)
   const tabFromUrl = searchParams.get("tab") || "dashboard"
   const activeTab: AdminTab = VALID_TABS.has(tabFromUrl) ? (tabFromUrl as AdminTab) : "dashboard"
 
-  // Update URL when tab changes
+  // Update URL when tab changes & clear badge when switching to orders
   const setActiveTab = (tab: AdminTab) => {
+    if (tab === "orders") {
+      setNewOrderBadge(0)
+    }
     const params = new URLSearchParams(searchParams.toString())
     params.set("tab", tab)
     router.replace(`/admin?${params.toString()}`, { scroll: false })
@@ -55,7 +64,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   if (loading) return null
 
   return (
-    <AdminTabContext.Provider value={{ activeTab, setActiveTab }}>
+    <AdminTabContext.Provider value={{ activeTab, setActiveTab, newOrderBadge, setNewOrderBadge }}>
       <div className="flex min-h-[calc(100vh-4rem)]">
         {/* Sidebar */}
         <aside className="w-64 border-r border-border bg-card/30 hidden md:flex flex-col">
@@ -73,6 +82,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <nav className="flex flex-col gap-1 p-3">
             {NAV_ITEMS.map((item) => {
               const isActive = activeTab === item.tab
+              const showBadge = item.tab === "orders" && newOrderBadge > 0 && !isActive
               return (
                 <button
                   key={item.tab}
@@ -85,6 +95,11 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                 >
                   <item.icon className="h-4 w-4" />
                   {item.label}
+                  {showBadge && (
+                    <span className="ml-auto flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold animate-pulse">
+                      {newOrderBadge}
+                    </span>
+                  )}
                 </button>
               )
             })}

@@ -20,7 +20,7 @@ export function Footer() {
               Premium cloud kitchen serving hot, hygiene-first, and chef-crafted meals for students & professionals across KIIT, Patia & nearby areas in Bhubaneswar.
             </p>
             <div className="flex items-center gap-4">
-              <Link href="https://instagram.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
+              <Link href="https://www.instagram.com/kravings_by.arf/" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
                 <Instagram className="h-5 w-5" />
               </Link>
               <Link href="https://facebook.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
@@ -70,7 +70,7 @@ export function Footer() {
               </li>
               <li className="flex items-center gap-3">
                 <Phone className="h-5 w-5 text-primary shrink-0" />
-                <span className="text-sm text-muted-foreground">+91 98765 43210</span>
+                <a href="tel:+918018332575" className="text-sm text-muted-foreground hover:text-primary transition-colors">+91 80183 32575</a>
               </li>
               <li className="flex items-center gap-3">
                 <Clock className="h-5 w-5 text-primary shrink-0" />
