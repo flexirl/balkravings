@@ -1,12 +1,14 @@
 import { HeroSection } from "@/components/landing/hero-section";
-import { FeaturesSection } from "@/components/landing/features-section";
-import { BestSellersSection } from "@/components/landing/best-sellers-section";
-import { OffersSection } from "@/components/landing/offers-section";
-import { TestimonialsSection } from "@/components/landing/testimonials-section";
-import { CtaSection } from "@/components/landing/cta-section";
-import {AboutUs} from "@/components/landing/about";
-import { PromoBanner } from "@/components/promo-banner";
+import dynamic from "next/dynamic";
 import Script from "next/script";
+
+const PromoBanner = dynamic(() => import("@/components/promo-banner").then(m => ({ default: m.PromoBanner })))
+const FeaturesSection = dynamic(() => import("@/components/landing/features-section").then(m => ({ default: m.FeaturesSection })))
+const BestSellersSection = dynamic(() => import("@/components/landing/best-sellers-section").then(m => ({ default: m.BestSellersSection })))
+const OffersSection = dynamic(() => import("@/components/landing/offers-section").then(m => ({ default: m.OffersSection })))
+const TestimonialsSection = dynamic(() => import("@/components/landing/testimonials-section").then(m => ({ default: m.TestimonialsSection })))
+const CtaSection = dynamic(() => import("@/components/landing/cta-section").then(m => ({ default: m.CtaSection })))
+const AboutUs = dynamic(() => import("@/components/landing/about").then(m => ({ default: m.AboutUs })))
 
 const jsonLd = {
   "@context": "https://schema.org",

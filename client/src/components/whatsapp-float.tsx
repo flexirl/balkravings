@@ -1,6 +1,15 @@
 "use client"
 
+import { usePathname } from "next/navigation"
+import { useAuth } from "@/context/auth-context"
+
 export function WhatsAppFloat() {
+  const pathname = usePathname()
+  const { user } = useAuth()
+
+  // Only show on homepage, and not for admins
+  if (pathname !== "/" || user?.role === "admin") return null
+
   const phone = "918018332575"
   const message = encodeURIComponent("Hi, I want to order from Kravings Kitchen")
   const href = `https://wa.me/${phone}?text=${message}`

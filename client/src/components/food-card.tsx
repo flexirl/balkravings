@@ -72,7 +72,7 @@ export function FoodCard({ food }: { food: Food }) {
           alt={food.name}
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-          quality={75}
+          quality={60}
           className={`object-cover transition-transform duration-500 ${food.availability ? "group-hover:scale-110" : ""}`}
         />
         
