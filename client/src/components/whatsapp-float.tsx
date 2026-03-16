@@ -1,7 +1,7 @@
 "use client"
 
 export function WhatsAppFloat() {
-  const phone = "919078179498" // Replace with your actual WhatsApp number
+  const phone = "918018332575"
   const message = encodeURIComponent("Hi, I want to order from Kravings Kitchen")
   const href = `https://wa.me/${phone}?text=${message}`
 

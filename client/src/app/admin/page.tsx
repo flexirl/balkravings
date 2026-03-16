@@ -67,6 +67,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldX,
+  Volume2,
+  VolumeX,
+  Timer,
 } from "lucide-react"
 import { DashboardStatsSkeleton, AdminOrderSkeleton, AdminFoodSkeleton } from "@/components/skeleton-loaders"
 
@@ -113,6 +116,33 @@ export default function AdminDashboard() {
   const router = useRouter()
   const { activeTab, setActiveTab } = useAdminTab()
   const audioContextRef = useRef<AudioContext | null>(null)
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [, setTick] = useState(0) // Force re-render for prep timer
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  // Tick every 30s to update prep timers
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Show browser desktop notification
+  const showDesktopNotification = (title: string, body: string) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+        tag: 'new-order',
+      })
+    }
+  }
 
   // Play a two-tone notification beep using Web Audio API
   const playNotificationSound = () => {
@@ -188,6 +218,7 @@ export default function AdminDashboard() {
   const [couponsLoading, setCouponsLoading] = useState(true)
   const [showCouponForm, setShowCouponForm] = useState(false)
   const [couponSaving, setCouponSaving] = useState(false)
+  const [editCouponId, setEditCouponId] = useState<string | null>(null)
   const [newCoupon, setNewCoupon] = useState({
     code: "",
     rewardType: "discount" as "discount" | "freebie",
@@ -199,6 +230,9 @@ export default function AdminDashboard() {
     expiresAt: "",
     freebieName: "",
   })
+
+  // New orders badge
+  const { setNewOrderBadge, newOrderBadge } = useAdminTab()
 
   // Offer Cards
   const [offerCards, setOfferCards] = useState<OfferCard[]>([])
@@ -309,8 +343,16 @@ export default function AdminDashboard() {
                 : prev.totalRevenue,
               recentOrders: [newOrder, ...prev.recentOrders].slice(0, 5),
             } : prev)
-            toast.success(`🔔 New order from ${newOrder.customer_name || "Customer"}!`)
-            playNotificationSound()
+            // Increment new order badge
+            setNewOrderBadge(prev => prev + 1)
+            const orderTotal = `₹${Number(newOrder.total_amount)}`
+            const customerName = newOrder.customer_name || "Customer"
+            toast.success(`🔔 New order from ${customerName}!`)
+            if (soundEnabled) playNotificationSound()
+            showDesktopNotification(
+              `🔔 New Order — ${orderTotal}`,
+              `${customerName} just placed an order${newOrder.order_items?.length ? ` (${newOrder.order_items.length} items)` : ''}`
+            )
           }
         }
       )
@@ -644,11 +686,28 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleEditCouponClick = (coupon: Coupon) => {
+    setEditCouponId(coupon.id)
+    setNewCoupon({
+      code: coupon.code,
+      rewardType: coupon.reward_type,
+      discountType: coupon.discount_type,
+      discountValue: coupon.discount_value.toString(),
+      minOrder: coupon.min_order.toString(),
+      maxDiscount: coupon.max_discount.toString(),
+      usageLimit: coupon.usage_limit.toString(),
+      expiresAt: coupon.expires_at ? new Date(coupon.expires_at).toISOString().slice(0, 16) : "",
+      freebieName: coupon.freebie_name || "",
+    })
+    setShowCouponForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault()
     setCouponSaving(true)
     try {
-      const insertPayload: Record<string, unknown> = {
+      const payload: Record<string, unknown> = {
         code: newCoupon.code.toUpperCase(),
         reward_type: newCoupon.rewardType,
         min_order: newCoupon.minOrder ? parseFloat(newCoupon.minOrder) : 0,
@@ -656,28 +715,44 @@ export default function AdminDashboard() {
         expires_at: newCoupon.expiresAt || null,
       }
       if (newCoupon.rewardType === 'freebie') {
-        insertPayload.freebie_name = newCoupon.freebieName
-        insertPayload.discount_type = 'flat'
-        insertPayload.discount_value = 0
-        insertPayload.max_discount = 0
+        payload.freebie_name = newCoupon.freebieName
+        payload.discount_type = 'flat'
+        payload.discount_value = 0
+        payload.max_discount = 0
       } else {
-        insertPayload.discount_type = newCoupon.discountType
-        insertPayload.discount_value = parseFloat(newCoupon.discountValue)
-        insertPayload.max_discount = newCoupon.maxDiscount ? parseFloat(newCoupon.maxDiscount) : 0
+        payload.discount_type = newCoupon.discountType
+        payload.discount_value = parseFloat(newCoupon.discountValue)
+        payload.max_discount = newCoupon.maxDiscount ? parseFloat(newCoupon.maxDiscount) : 0
       }
-      const { data, error } = await supabase
-        .from('coupons')
-        .insert(insertPayload)
-        .select()
-        .single()
-      if (error) throw error
-      setCoupons((prev) => [data, ...prev])
+
+      if (editCouponId) {
+        // Update existing coupon
+        const { data, error } = await supabase
+          .from('coupons')
+          .update(payload)
+          .eq('id', editCouponId)
+          .select()
+          .single()
+        if (error) throw error
+        setCoupons((prev) => prev.map(c => c.id === editCouponId ? data : c))
+        toast.success("Coupon updated!")
+      } else {
+        // Create new coupon
+        const { data, error } = await supabase
+          .from('coupons')
+          .insert(payload)
+          .select()
+          .single()
+        if (error) throw error
+        setCoupons((prev) => [data, ...prev])
+        toast.success("Coupon created!")
+      }
       setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "", freebieName: "" })
+      setEditCouponId(null)
       setShowCouponForm(false)
-      toast.success("Coupon created!")
     } catch (error: unknown) {
       const err = error as { message?: string }
-      toast.error(err.message || "Failed to create coupon")
+      toast.error(err.message || "Failed to save coupon")
     } finally {
       setCouponSaving(false)
     }
@@ -725,13 +800,18 @@ export default function AdminDashboard() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+            className={`relative px-5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
               activeTab === tab
                 ? "bg-primary text-primary-foreground"
                 : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === "orders" && newOrderBadge > 0 && activeTab !== "orders" && (
+              <span className="absolute -top-1 -right-1 flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold animate-pulse">
+                {newOrderBadge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -954,18 +1034,43 @@ export default function AdminDashboard() {
               <p className="text-muted-foreground">No food items yet. Click &quot;Add Item&quot; to start.</p>
             </div>
           ) : (
-            <div className="grid gap-4">
-              {foods.map((food) => (
+            <>{(() => {
+              // Compute best sellers from order data (once, outside map)
+              const itemCounts: Record<string, number> = {}
+              orders.forEach(order => {
+                (order.order_items || []).forEach(item => {
+                  itemCounts[item.name] = (itemCounts[item.name] || 0) + item.quantity
+                })
+              })
+              const topItems = Object.entries(itemCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([name]) => name.toLowerCase())
+
+              return (
+              <div className="grid gap-4">
+              {foods.map((food) => {
+                const isBestSeller = topItems.includes(food.name.toLowerCase())
+                const orderCount = itemCounts[food.name] || 0
+                return (
                 <div
                   key={food.id}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border hover:border-border/80 transition-colors"
+                  className={`flex items-center gap-4 p-4 rounded-xl bg-card border transition-colors ${isBestSeller ? 'border-amber-500/30 bg-amber-500/[0.03]' : 'border-border hover:border-border/80'}`}
                 >
                   <div className="relative h-16 w-16 rounded-xl overflow-hidden border border-border flex-shrink-0">
                     <Image src={food.image} alt={food.name} fill className="object-cover" />
+                    {isBestSeller && (
+                      <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-amber-500 flex items-center justify-center text-white text-[10px]">🔥</div>
+                    )}
                   </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-lg truncate flex-1">{food.name}</h3>
+                          {isBestSeller && (
+                            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-semibold shrink-0">
+                              🔥 Best Seller
+                            </span>
+                          )}
                           <button
                             onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
                             className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 transition-colors ${
@@ -983,6 +1088,11 @@ export default function AdminDashboard() {
                             <div className={`w-2 h-2 rounded-full ${food.is_veg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
                             {food.is_veg !== false ? 'Veg' : 'Non-Veg'}
                           </span>
+                          {orderCount > 0 && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium border border-blue-500/10">
+                              {orderCount} ordered
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">{food.description}</p>
                   </div>
@@ -1017,8 +1127,11 @@ export default function AdminDashboard() {
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+                )
+              })}
+              </div>
+              )
+            })()}</>
           )}
         </div>
       )}
@@ -1164,9 +1277,29 @@ export default function AdminDashboard() {
                             </p>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-2 ml-12">
-                          {new Date(order.created_at).toLocaleString("en-IN")}
-                        </p>
+                        <div className="flex items-center gap-3 mt-2 ml-12 flex-wrap">
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(order.created_at).toLocaleString("en-IN")}
+                          </p>
+                          {/* Prep Time Tracker — only for active orders */}
+                          {!['delivered', 'cancelled'].includes(order.order_status) && (() => {
+                            const elapsed = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000)
+                            const color = elapsed > 30
+                              ? 'bg-red-500/15 text-red-400 border-red-500/20'
+                              : elapsed > 15
+                              ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20'
+                              : 'bg-green-500/15 text-green-400 border-green-500/20'
+                            const display = elapsed >= 60
+                              ? `${Math.floor(elapsed / 60)}h ${elapsed % 60}m ago`
+                              : `${elapsed}m ago`
+                            return (
+                              <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${color}`}>
+                                <Timer className="h-3 w-3" />
+                                {display}
+                              </span>
+                            )
+                          })()}
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <span className="font-bold text-primary">₹{Number(order.total_amount)}</span>
@@ -1272,30 +1405,113 @@ export default function AdminDashboard() {
                         </p>
                       </div>
 
-                      {!appSettings.is_store_open && (
+                      {!appSettings.is_store_open && (() => {
+                        // Parse existing store_opens_at into 12hr parts
+                        const existing = appSettings.store_opens_at ? new Date(appSettings.store_opens_at) : null
+                        const existingHour24 = existing ? existing.getHours() : null
+                        const existingMin = existing ? existing.getMinutes() : null
+                        const existingHour12 = existingHour24 !== null ? (existingHour24 === 0 ? 12 : existingHour24 > 12 ? existingHour24 - 12 : existingHour24) : ""
+                        const existingPeriod = existingHour24 !== null ? (existingHour24 >= 12 ? "PM" : "AM") : "AM"
+                        const existingMinStr = existingMin !== null ? String(existingMin).padStart(2, "0") : ""
+
+                        const saveOpeningTime = async (hour12: number, minute: number, period: string) => {
+                          let hour24 = hour12
+                          if (period === "AM" && hour12 === 12) hour24 = 0
+                          else if (period === "PM" && hour12 !== 12) hour24 = hour12 + 12
+                          const now = new Date()
+                          const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour24, minute, 0)
+                          // If the time is already past today, set it for tomorrow
+                          if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
+                          const isoValue = target.toISOString()
+                          setAppSettings({ ...appSettings, store_opens_at: isoValue })
+                          try {
+                            const { error } = await supabase
+                              .from('settings')
+                              .update({ store_opens_at: isoValue })
+                              .eq('id', appSettings.id || '')
+                            if (error) throw error
+                            toast.success("Opening time updated")
+                          } catch {
+                            toast.error("Failed to update opening time")
+                          }
+                        }
+
+                        return (
                         <div className="shrink-0 space-y-2">
                           <Label className="text-xs">Opening At (Optional Countdown)</Label>
-                          <Input
-                            type="datetime-local"
-                            value={appSettings.store_opens_at ? new Date(appSettings.store_opens_at).toISOString().slice(0, 16) : ""}
-                            onChange={async (e) => {
-                              const newValue = e.target.value || null
-                              setAppSettings({ ...appSettings, store_opens_at: newValue })
-                              try {
-                                const { error } = await supabase
-                                  .from('settings')
-                                  .update({ store_opens_at: newValue })
-                                  .eq('id', appSettings.id || '')
-                                if (error) throw error
-                                toast.success("Opening time updated")
-                              } catch {
-                                toast.error("Failed to update opening time")
-                              }
-                            }}
-                            className="h-9 rounded-lg bg-background border-border text-sm"
-                          />
+                          <div className="flex items-center gap-2">
+                            {/* Hour */}
+                            <select
+                              value={existingHour12}
+                              onChange={(e) => {
+                                const h = parseInt(e.target.value)
+                                const m = existingMin ?? 0
+                                saveOpeningTime(h, m, existingPeriod)
+                              }}
+                              className="h-9 px-2 rounded-lg bg-background border border-border text-sm min-w-[60px]"
+                            >
+                              <option value="" disabled>Hr</option>
+                              {[1,2,3,4,5,6,7,8,9,10,11,12].map(h => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                            </select>
+                            <span className="text-muted-foreground font-bold">:</span>
+                            {/* Minute */}
+                            <select
+                              value={existingMinStr}
+                              onChange={(e) => {
+                                const m = parseInt(e.target.value)
+                                const h = typeof existingHour12 === "number" ? existingHour12 : 12
+                                saveOpeningTime(h, m, existingPeriod)
+                              }}
+                              className="h-9 px-2 rounded-lg bg-background border border-border text-sm min-w-[60px]"
+                            >
+                              <option value="" disabled>Min</option>
+                              {["00","15","30","45"].map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                            {/* AM/PM */}
+                            <select
+                              value={existingPeriod}
+                              onChange={(e) => {
+                                const p = e.target.value
+                                const h = typeof existingHour12 === "number" ? existingHour12 : 12
+                                const m = existingMin ?? 0
+                                saveOpeningTime(h, m, p)
+                              }}
+                              className="h-9 px-2 rounded-lg bg-background border border-border text-sm min-w-[60px]"
+                            >
+                              <option value="AM">AM</option>
+                              <option value="PM">PM</option>
+                            </select>
+                            {/* Clear button */}
+                            {existing && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setAppSettings({ ...appSettings, store_opens_at: null })
+                                  try {
+                                    await supabase.from('settings').update({ store_opens_at: null }).eq('id', appSettings.id || '')
+                                    toast.success("Opening time cleared")
+                                  } catch {
+                                    toast.error("Failed to clear opening time")
+                                  }
+                                }}
+                                className="h-9 px-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                          {existing && (
+                            <p className="text-xs text-muted-foreground">
+                              Opens at: {existing.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, day: "numeric", month: "short" })}
+                            </p>
+                          )}
                         </div>
-                      )}
+                        )
+                      })()}
                     </div>
                   </div>
 
@@ -1446,7 +1662,15 @@ export default function AdminDashboard() {
               <p className="text-muted-foreground text-sm mt-1">{coupons.length} coupons</p>
             </div>
             <Button
-              onClick={() => setShowCouponForm(!showCouponForm)}
+              onClick={() => {
+                if (showCouponForm) {
+                  setShowCouponForm(false)
+                  setEditCouponId(null)
+                  setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "", freebieName: "" })
+                } else {
+                  setShowCouponForm(true)
+                }
+              }}
               className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
             >
               {showCouponForm ? <X className="h-4 w-4" /> : <Tag className="h-4 w-4" />}
@@ -1575,8 +1799,8 @@ export default function AdminDashboard() {
                     disabled={couponSaving}
                     className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground"
                   >
-                    {couponSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tag className="mr-2 h-4 w-4" />}
-                    Create Coupon
+                    {couponSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : editCouponId ? <Edit2 className="mr-2 h-4 w-4" /> : <Tag className="mr-2 h-4 w-4" />}
+                    {editCouponId ? "Update Coupon" : "Create Coupon"}
                   </Button>
                 </form>
               </CardContent>
@@ -1621,14 +1845,26 @@ export default function AdminDashboard() {
                       {coupon.expires_at && ` · Expires ${new Date(coupon.expires_at).toLocaleDateString("en-IN")}`}
                     </p>
                   </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 rounded-lg text-destructive hover:text-destructive"
-                    onClick={() => handleDeleteCoupon(coupon.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 rounded-lg text-blue-500 hover:text-blue-400 hover:bg-blue-500/10"
+                      onClick={() => handleEditCouponClick(coupon)}
+                      title="Edit coupon"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 rounded-lg text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteCoupon(coupon.id)}
+                      title="Delete coupon"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -16,7 +16,7 @@ const jsonLd = {
   description:
     "Premium cloud kitchen delivering fresh, affordable meals across KIIT, Patia, Chandrasekharpur & nearby areas in Bhubaneswar. Biryanis, combos, parathas & more delivered in 20 minutes. Open till 1 AM.",
   url: "https://www.kravingskitchen.in",
-  telephone: "+919876543210",
+  telephone: "+918018332575",
   servesCuisine: ["Indian", "North Indian", "Biryani", "Fast Food"],
   priceRange: "₹",
   address: {
@@ -68,7 +68,7 @@ const jsonLd = {
   hasMenu: "https://www.kravingskitchen.in/menu",
   acceptsReservations: false,
   sameAs: [
-    "https://www.instagram.com/kravingsbyarf",
+    "https://www.instagram.com/kravings_by.arf/",
     "https://www.facebook.com/kravingsbyarf",
   ],
   potentialAction: {

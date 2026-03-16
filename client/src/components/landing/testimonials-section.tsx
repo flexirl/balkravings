@@ -3,23 +3,23 @@ import { Star } from "lucide-react";
 // Mock Testimonials
 const TESTIMONIALS = [
   {
-    name: "Aarav Sharma",
-    role: "B.Tech CSE, 3rd Year",
-    content: "The 20-min delivery is literally a lifesaver during exams. The Peri Peri fries are always hot and crisp when they arrive. Highly recommended!",
+    name: "Sneha Das",
+    role: "B.Tech IT, 2nd Year",
+    content: "hostel mess band tha so I tried the aloo paratha + dahi raita combo and bhai it literally tasted like ghar ka khana?? the paratha was soft and stuffed properly not some dry maida thing. now every sunday I skip mess and order from here instead 😭",
     rating: 5,
     avatarId: 10,
   },
   {
-    name: "Riya Patel",
-    role: "BBA, 2nd Year",
-    content: "Finally a cloud kitchen near KIIT that doesn't compromise on hygiene. The packaging is premium and the Tandoori Burger is just chef's kiss 🤌.",
+    name: "Rohit Mehra",
+    role: "Hostel KP-5",
+    content: "ordered matar paneer with fried rice for dinner and my roommate was like 'bro ye hostel mein kaise aa gaya'. that's the best review I can give lol. also the egg curry is underrated, tastes like something my mom would make ngl 😂",
     rating: 5,
     avatarId: 20,
   },
   {
-    name: "Kabir Singh",
-    role: "Hostel KP-6",
-    content: "We ordered the group combo for match night. Food came right on time, piping hot, and the free Cokes made our day. Best late-night spot!",
+    name: "Ananya Mishra",
+    role: "MBA, 1st Year",
+    content: "was craving chicken biryani at midnight and most places were closed. these guys delivered in 20 mins and the biryani had actual chicken pieces not just bones 😭 also tried their paneer bhurji paratha combo last week — pure comfort food. wallet is suffering tho because I keep ordering",
     rating: 4,
     avatarId: 30,
   },
