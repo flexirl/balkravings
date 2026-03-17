@@ -82,6 +82,7 @@ export default function MenuClient({ initialFoods }: { initialFoods: Food[] }) {
           const { data } = await supabase
             .from('foods')
             .select('*')
+            .order('category', { ascending: true })
             .order('availability', { ascending: false })
             .order('created_at', { ascending: false })
           if (data && !cancelled) setFoods(data)
@@ -117,6 +118,7 @@ export default function MenuClient({ initialFoods }: { initialFoods: Food[] }) {
     const { data } = await supabase
       .from('foods')
       .select('*')
+      .order('category', { ascending: true })
       .order('availability', { ascending: false })
       .order('created_at', { ascending: false })
     if (data) setFoods(data)

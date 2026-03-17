@@ -262,6 +262,19 @@ export default function CheckoutPage() {
         return
       }
 
+      // Per-user limit check
+      if (user && coupon.per_user_limit > 0) {
+        const { count } = await supabase
+          .from('coupon_usages')
+          .select('*', { count: 'exact', head: true })
+          .eq('coupon_code', coupon.code)
+          .eq('user_id', user.id)
+        if (count !== null && count >= coupon.per_user_limit) {
+          toast.error(`You've already used this coupon${coupon.per_user_limit > 1 ? ` ${coupon.per_user_limit} times` : ''}`)
+          return
+        }
+      }
+
       if (coupon.reward_type === 'freebie') {
         setCouponDiscount(0)
         setCouponFreebie(coupon.freebie_name || 'Free item')
@@ -447,6 +460,23 @@ export default function CheckoutPage() {
             await supabase.rpc('increment_coupon_usage', { coupon_code: couponApplied })
           } catch { /* ignore */ }
         }
+      }
+
+      // Log coupon usage for tracking (works for both RPC and fallback)
+      if (couponApplied && user) {
+        try {
+          // Get coupon id for the log
+          const { data: couponData } = await supabase
+            .from('coupons')
+            .select('id')
+            .eq('code', couponApplied)
+            .single()
+          await supabase.from('coupon_usages').insert({
+            coupon_id: couponData?.id || null,
+            coupon_code: couponApplied,
+            user_id: user.id,
+          })
+        } catch { /* silent */ }
       }
 
       clearCart()

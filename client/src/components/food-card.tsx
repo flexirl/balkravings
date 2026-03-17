@@ -8,7 +8,7 @@ import { Clock, Plus, Minus, Check } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import { useRef } from "react"
+import { useRef, useState } from "react"
 
 interface Food {
   id: string
@@ -20,6 +20,32 @@ interface Food {
   availability: boolean
   preparation_time?: number
   is_veg?: boolean
+}
+
+/** Inline expandable description — "more" / "less" looks like part of the text */
+function ExpandableDesc({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const needsTruncation = text.length > 80
+
+  if (!needsTruncation) {
+    return (
+      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed min-h-[2rem]">
+        {text}
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed min-h-[2rem]">
+      {expanded ? text : text.slice(0, 80).trimEnd() + "… "}
+      <span
+        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+        className="text-primary/70 cursor-pointer hover:text-primary transition-colors"
+      >
+        {expanded ? " less" : "more"}
+      </span>
+    </p>
+  )
 }
 
 export function FoodCard({ food }: { food: Food }) {
@@ -103,9 +129,7 @@ export function FoodCard({ food }: { food: Food }) {
       <CardContent className="p-5 pb-3">
         <span className="text-[10px] uppercase tracking-widest text-primary font-semibold">{food.category}</span>
         <h3 className="font-bold text-base mt-1.5 line-clamp-1">{food.name}</h3>
-        <p className="text-xs text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed min-h-[2rem]">
-          {food.description}
-        </p>
+        <ExpandableDesc text={food.description} />
       </CardContent>
 
       {/* Footer */}

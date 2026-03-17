@@ -11,6 +11,7 @@ async function getFoods() {
   const { data, error } = await supabase
     .from("foods")
     .select("*")
+    .order("category", { ascending: true })
     .order("availability", { ascending: false })
     .order("created_at", { ascending: false })
 

@@ -33,6 +33,7 @@ interface Coupon {
   max_discount: number
   usage_limit: number
   used_count: number
+  per_user_limit: number
   is_active: boolean
   expires_at: string | null
   reward_type: "discount" | "freebie"
@@ -227,6 +228,7 @@ export default function AdminDashboard() {
     minOrder: "",
     maxDiscount: "",
     usageLimit: "",
+    perUserLimit: "1",
     expiresAt: "",
     freebieName: "",
   })
@@ -696,6 +698,7 @@ export default function AdminDashboard() {
       minOrder: coupon.min_order.toString(),
       maxDiscount: coupon.max_discount.toString(),
       usageLimit: coupon.usage_limit.toString(),
+      perUserLimit: (coupon.per_user_limit ?? 1).toString(),
       expiresAt: coupon.expires_at ? new Date(coupon.expires_at).toISOString().slice(0, 16) : "",
       freebieName: coupon.freebie_name || "",
     })
@@ -712,6 +715,7 @@ export default function AdminDashboard() {
         reward_type: newCoupon.rewardType,
         min_order: newCoupon.minOrder ? parseFloat(newCoupon.minOrder) : 0,
         usage_limit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 0,
+        per_user_limit: newCoupon.perUserLimit ? parseInt(newCoupon.perUserLimit) : 1,
         expires_at: newCoupon.expiresAt || null,
       }
       if (newCoupon.rewardType === 'freebie') {
@@ -747,7 +751,7 @@ export default function AdminDashboard() {
         setCoupons((prev) => [data, ...prev])
         toast.success("Coupon created!")
       }
-      setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "", freebieName: "" })
+      setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", perUserLimit: "1", expiresAt: "", freebieName: "" })
       setEditCouponId(null)
       setShowCouponForm(false)
     } catch (error: unknown) {
@@ -1666,7 +1670,7 @@ export default function AdminDashboard() {
                 if (showCouponForm) {
                   setShowCouponForm(false)
                   setEditCouponId(null)
-                  setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", expiresAt: "", freebieName: "" })
+                  setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", perUserLimit: "1", expiresAt: "", freebieName: "" })
                 } else {
                   setShowCouponForm(true)
                 }
@@ -1782,6 +1786,17 @@ export default function AdminDashboard() {
                         className="h-10 rounded-xl bg-secondary border-border"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Per-User Limit</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="1 = once per user, 0 = unlimited"
+                        value={newCoupon.perUserLimit}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, perUserLimit: e.target.value })}
+                        className="h-10 rounded-xl bg-secondary border-border"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -1842,6 +1857,7 @@ export default function AdminDashboard() {
                       {coupon.min_order > 0 && ` · Min ₹${coupon.min_order}`}
                       {coupon.reward_type === "discount" && coupon.max_discount > 0 && ` · Max ₹${coupon.max_discount}`}
                       {coupon.usage_limit > 0 && ` · ${coupon.used_count}/${coupon.usage_limit} used`}
+                      {` · ${coupon.per_user_limit > 0 ? coupon.per_user_limit + 'x/user' : '∞/user'}`}
                       {coupon.expires_at && ` · Expires ${new Date(coupon.expires_at).toLocaleDateString("en-IN")}`}
                     </p>
                   </div>
