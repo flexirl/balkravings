@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabase"
+import api from "@/lib/api"
 import {
   Loader2,
   Banknote,
@@ -480,6 +481,9 @@ export default function CheckoutPage() {
       }
 
       clearCart()
+
+      // Fire-and-forget: Send order confirmation email (non-blocking)
+      api.post('/email/order-confirmation', { orderId }).catch(() => {})
 
       // Anti-spam: Set local cooldown timer after successful order
       const expiresAt = Date.now() + COOLDOWN_MS
