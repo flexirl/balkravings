@@ -1,8 +1,9 @@
 "use client"
 
-import React, { createContext, useContext, useState, useRef } from "react"
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { useAuth } from "./auth-context"
+import supabase from "@/lib/supabase"
 
 interface CartItem {
   foodId: string
@@ -26,18 +27,74 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
+  const [loaded, setLoaded] = useState(false)
   const { user } = useAuth()
 
-  // Track previous user to clear cart on user change (login/logout/switch)
+  // Track previous user to load saved cart on user change
   const prevUserId = useRef<string | null | undefined>(undefined)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skipSaveRef = useRef(false)
 
-  // Clear cart whenever user changes (logout, login, switch account)
-  if (prevUserId.current !== undefined && (user?.id || null) !== prevUserId.current) {
-    setItems([])
-  }
-  prevUserId.current = user?.id || null
+  // ─── Load cart from Supabase when user logs in ───
+  useEffect(() => {
+    const currentId = user?.id || null
 
-  // ───── Cart Operations (session-only, no database) ─────
+    const loadCart = async (userId: string) => {
+      skipSaveRef.current = true
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('cart')
+          .eq('id', userId)
+          .single()
+        const savedCart = data?.cart as CartItem[] | null
+        setItems(savedCart && Array.isArray(savedCart) ? savedCart : [])
+      } catch {
+        setItems([])
+      }
+      setLoaded(true)
+      setTimeout(() => { skipSaveRef.current = false }, 500)
+    }
+
+    if (prevUserId.current !== undefined && currentId !== prevUserId.current) {
+      if (currentId) {
+        loadCart(currentId)
+      } else {
+        setItems([])
+        setLoaded(true)
+      }
+    } else if (prevUserId.current === undefined && currentId) {
+      loadCart(currentId)
+    } else if (prevUserId.current === undefined) {
+      setLoaded(true)
+    }
+
+    prevUserId.current = currentId
+  }, [user?.id])
+
+  // ─── Debounced save to Supabase on cart change ───
+  const saveCart = useCallback((cartItems: CartItem[]) => {
+    if (!user?.id || skipSaveRef.current) return
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await supabase
+          .from('profiles')
+          .update({ cart: cartItems })
+          .eq('id', user.id)
+      } catch { /* silent */ }
+    }, 1000) // 1s debounce
+  }, [user?.id])
+
+  // Save whenever items change (after initial load)
+  useEffect(() => {
+    if (loaded) {
+      saveCart(items)
+    }
+  }, [items, loaded, saveCart])
+
+  // ───── Cart Operations ─────
 
   const MAX_QUANTITY = 20
 

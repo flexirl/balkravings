@@ -74,7 +74,7 @@ export function Footer() {
               </li>
               <li className="flex items-center gap-3">
                 <Clock className="h-5 w-5 text-primary shrink-0" />
-                <span className="text-sm text-muted-foreground">12:00 PM – 1:00 AM (Daily)</span>
+                <span className="text-sm text-muted-foreground">12:00 PM – 2:00 AM (Daily)</span>
               </li>
             </ul>
           </div>
@@ -86,7 +86,7 @@ export function Footer() {
           </p>
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             Made with <span className="text-red-500">♥</span> for kiitians
-             <a href="https://www.flexirl.com">  by Flexirl.com</a> 
+            <a href="https://www.flexirl.com">  by Flexirl.com</a>
           </p>
         </div>
       </div>
