@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Rocket, X } from "lucide-react"
 
 // Launch date: March 18, 2026 at 12:00 PM IST
-const LAUNCH_DATE = new Date("2026-03-18T12:00:00+05:30")
+const LAUNCH_DATE = new Date("2026-03-18T11:00:00+05:30");
 
 export function LaunchBanner() {
   const [timeLeft, setTimeLeft] = useState("")

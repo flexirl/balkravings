@@ -40,9 +40,12 @@ app.use('/api/upload', uploadRoutes);
 import emailRoutes from './routes/emailRoutes';
 app.use('/api/email', emailRoutes);
 
-// Verify email SMTP connection on startup
+// Verify email SMTP connection on startup, then start order email listener
 import { verifyEmailConnection } from './services/emailService';
-verifyEmailConnection();
+import { startOrderEmailListener } from './services/orderEmailListener';
+verifyEmailConnection().then(() => {
+  startOrderEmailListener();
+});
 
 // Health check
 app.get('/', (req: Request, res: Response) => {

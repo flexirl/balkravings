@@ -482,8 +482,16 @@ export default function CheckoutPage() {
 
       clearCart()
 
-      // Fire-and-forget: Send order confirmation email (non-blocking)
-      api.post('/email/order-confirmation', { orderId }).catch(() => {})
+      // Send order confirmation email (awaited to prevent navigation from cancelling it)
+      try {
+        await Promise.race([
+          api.post('/email/order-confirmation', { orderId }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+        ])
+      } catch {
+        // Email sending is best-effort, don't block the user
+        console.warn('Order confirmation email may not have sent')
+      }
 
       // Anti-spam: Set local cooldown timer after successful order
       const expiresAt = Date.now() + COOLDOWN_MS
