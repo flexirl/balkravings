@@ -4,9 +4,9 @@ import { useState } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, createContext, useContext, Suspense } from "react"
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, ChefHat, Settings, Tag, Megaphone } from "lucide-react"
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, ChefHat, Settings, Tag, Megaphone, Mail } from "lucide-react"
 
-export type AdminTab = "dashboard" | "orders" | "foods" | "settings" | "coupons" | "offers"
+export type AdminTab = "dashboard" | "orders" | "foods" | "settings" | "coupons" | "offers" | "emails"
 
 interface AdminTabContextType {
   activeTab: AdminTab
@@ -31,6 +31,7 @@ const NAV_ITEMS: { tab: AdminTab; label: string; icon: typeof LayoutDashboard }[
   { tab: "settings", label: "Settings", icon: Settings },
   { tab: "coupons", label: "Coupons", icon: Tag },
   { tab: "offers", label: "Offer Cards", icon: Megaphone },
+  { tab: "emails", label: "Emails", icon: Mail },
 ]
 
 const VALID_TABS = new Set<string>(NAV_ITEMS.map(i => i.tab))

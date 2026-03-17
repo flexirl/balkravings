@@ -36,6 +36,14 @@ app.use(morgan('dev'));
 import uploadRoutes from './routes/uploadRoutes';
 app.use('/api/upload', uploadRoutes);
 
+// Email routes (Nodemailer + Zoho SMTP)
+import emailRoutes from './routes/emailRoutes';
+app.use('/api/email', emailRoutes);
+
+// Verify email SMTP connection on startup
+import { verifyEmailConnection } from './services/emailService';
+verifyEmailConnection();
+
 // Health check
 app.get('/', (req: Request, res: Response) => {
   res.json({ message: 'KRAVINGS BY ARF CAFE API' });

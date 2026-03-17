@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import supabase from "@/lib/supabase"
+import api from "@/lib/api"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import { useAdminTab } from "./layout"
@@ -71,6 +72,9 @@ import {
   Volume2,
   VolumeX,
   Timer,
+  Mail,
+  Send,
+  Image as ImageIcon,
 } from "lucide-react"
 import { DashboardStatsSkeleton, AdminOrderSkeleton, AdminFoodSkeleton } from "@/components/skeleton-loaders"
 
@@ -522,6 +526,11 @@ export default function AdminDashboard() {
       if (error) throw error
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)))
       toast.success(`Order status updated to ${orderStatus}`)
+
+      // Fire-and-forget: Send delivery email when order is delivered
+      if (orderStatus === 'delivered') {
+        api.post('/email/order-delivered', { orderId: id }).catch(() => {})
+      }
     } catch {
       toast.error("Failed to update order")
     }
@@ -800,7 +809,7 @@ export default function AdminDashboard() {
 
       {/* Mobile Tab Navigation — only shows on small screens */}
       <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
-        {(["dashboard", "orders", "foods", "settings", "coupons", "offers"] as const).map((tab) => (
+        {(["dashboard", "orders", "foods", "settings", "coupons", "offers", "emails"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -1983,6 +1992,283 @@ export default function AdminDashboard() {
           )}
         </div>
       )}
+
+      {/* ==================== EMAILS TAB ==================== */}
+      {activeTab === "emails" && (
+        <EmailsTab />
+      )}
+    </div>
+  )
+}
+
+// ─── Emails Tab Component ──────────────────────────────────
+function EmailsTab() {
+  const [subject, setSubject] = useState("")
+  const [body, setBody] = useState("")
+  const [imageUrl, setImageUrl] = useState("")
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState("")
+  const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [customerCount, setCustomerCount] = useState<number | null>(null)
+  const [lastResult, setLastResult] = useState<{ sent: number; failed: number; total: number } | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
+
+  // Fetch customer count on mount
+  useEffect(() => {
+    api.get('/email/customers')
+      .then(res => setCustomerCount(res.data.total))
+      .catch(() => setCustomerCount(null))
+  }, [])
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+
+    // Upload to Supabase Storage
+    setUploading(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `email-${Date.now()}.${fileExt}`
+      const filePath = `email-images/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('food-images')
+        .upload(filePath, file, { cacheControl: '3600', upsert: false })
+
+      if (uploadError) throw uploadError
+
+      const { data: publicUrlData } = supabase.storage
+        .from('food-images')
+        .getPublicUrl(filePath)
+      setImageUrl(publicUrlData.publicUrl)
+      toast.success('Image uploaded!')
+    } catch {
+      toast.error('Failed to upload image')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleSendBulk = async () => {
+    if (!subject.trim() || !body.trim()) {
+      toast.error('Subject and body are required')
+      return
+    }
+    if (!confirm(`Send this email to ${customerCount ?? 'all'} customers?`)) return
+
+    setSending(true)
+    setLastResult(null)
+    try {
+      const { data } = await api.post('/email/bulk', {
+        subject,
+        body: body.replace(/\n/g, '<br/>'),
+        imageUrl: imageUrl || undefined,
+      })
+      setLastResult(data.result)
+      toast.success(data.message)
+    } catch {
+      toast.error('Failed to send bulk email')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleClearImage = () => {
+    setImageFile(null)
+    setImagePreview("")
+    setImageUrl("")
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold flex items-center gap-2">
+          <Mail className="h-6 w-6 text-primary" />
+          Email Marketing
+        </h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          Send promotional emails to {customerCount !== null ? <strong>{customerCount}</strong> : 'all'} customers
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Compose */}
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Edit2 className="h-4 w-4 text-primary" />
+              Compose Email
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email-subject" className="text-sm font-medium">Subject Line</Label>
+              <Input
+                id="email-subject"
+                placeholder="🔥 20% OFF Today Only!"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="h-11 rounded-xl bg-secondary border-border"
+                maxLength={100}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email-body" className="text-sm font-medium">Email Body</Label>
+              <textarea
+                id="email-body"
+                placeholder="Write your email content here...&#10;&#10;Use line breaks for paragraphs.&#10;HTML tags like <b>bold</b> and <i>italic</i> are supported."
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={8}
+                className="w-full rounded-xl bg-secondary border border-border p-3 text-sm resize-y focus:outline-none focus:border-primary/50 transition-colors"
+                maxLength={5000}
+              />
+              <p className="text-[11px] text-muted-foreground">{body.length}/5000 characters</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                Banner Image (Optional)
+              </Label>
+              {imagePreview ? (
+                <div className="relative">
+                  <img src={imagePreview} alt="Email banner" className="w-full h-40 object-cover rounded-xl border border-border" />
+                  <button
+                    type="button"
+                    onClick={handleClearImage}
+                    className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  {uploading && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl">
+                      <Loader2 className="h-6 w-6 animate-spin text-white" />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center h-32 rounded-xl border-2 border-dashed border-border hover:border-primary/40 cursor-pointer transition-colors bg-secondary/30">
+                  <ImagePlus className="h-8 w-8 text-muted-foreground mb-2" />
+                  <span className="text-sm text-muted-foreground">Click to upload banner image</span>
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                </label>
+              )}
+            </div>
+
+            <Separator className="bg-border" />
+
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={() => setShowPreview(!showPreview)}
+                variant="outline"
+                className="flex-1 h-11 rounded-xl border-border"
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                {showPreview ? 'Hide Preview' : 'Preview'}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSendBulk}
+                disabled={sending || !subject.trim() || !body.trim() || uploading}
+                className="flex-1 h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {sending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
+                ) : (
+                  <><Send className="mr-2 h-4 w-4" /> Send to All</>  
+                )}
+              </Button>
+            </div>
+
+            {/* Result */}
+            {lastResult && (
+              <div className={`p-4 rounded-xl border ${
+                lastResult.failed === 0 
+                  ? 'bg-green-500/10 border-green-500/30 text-green-500'
+                  : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-600'
+              }`}>
+                <p className="font-medium text-sm">
+                  ✉️ {lastResult.sent}/{lastResult.total} emails sent successfully
+                  {lastResult.failed > 0 && ` (${lastResult.failed} failed)`}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Preview */}
+        <div className="space-y-4">
+          {showPreview && (
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-lg">Email Preview</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-xl border border-border overflow-hidden shadow-sm">
+                  {/* Simulated email header */}
+                  <div style={{ background: 'linear-gradient(145deg, #af1d1d, #8b1515)' }} className="py-8 px-6 text-center">
+                    <div className="inline-block border-2 border-white/30 rounded-xl px-7 py-2 mb-2">
+                      <h3 className="text-white text-2xl font-black tracking-[4px]">KRAVINGS</h3>
+                    </div>
+                    <p className="text-white/70 text-[11px] tracking-[3px] uppercase font-medium">by ARF</p>
+                  </div>
+                  {/* Maroon accent line */}
+                  <div style={{ height: '4px', background: 'linear-gradient(90deg, #d44040, #af1d1d, #8b1515)' }} />
+                  <div className="p-6 bg-white">
+                    <div className="text-center mb-5">
+                      <span className="text-[44px]">🔥</span>
+                      <h3 className="text-xl font-extrabold text-gray-900 mt-2">{subject || 'Your Subject Here'}</h3>
+                    </div>
+                    {imageUrl && (
+                      <img src={imageUrl} alt="Banner" className="w-full rounded-xl mb-5 border border-gray-100" />
+                    )}
+                    <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">
+                      {body || 'Your email content will appear here...'}
+                    </div>
+                    <div className="text-center mt-7">
+                      <span className="inline-block px-9 py-3.5 rounded-xl text-white font-bold text-sm" style={{ background: 'linear-gradient(135deg, #d44040, #af1d1d)' }}>
+                        🍕 Order Now
+                      </span>
+                    </div>
+                  </div>
+                  <div className="py-5 px-4 text-center" style={{ background: '#1a1a1a' }}>
+                    <p className="text-xs font-semibold" style={{ color: '#d44040' }}>www.kravingskitchen.in</p>
+                    <p className="text-gray-500 text-xs mt-1">📍 Bhubaneswar &nbsp;|&nbsp; 📞 +91 8018332575</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Quick Templates */}
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="text-lg">Quick Templates</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {[
+                { label: '🎉 Discount Offer', sub: '🔥 Flat 20% OFF — Today Only!', bod: 'Hey Foodie! 🍔\n\nWe\'re offering a FLAT 20% OFF on all orders today!\n\nUse code: KRAVINGS20 at checkout.\n\nDon\'t miss out — order now and satisfy your cravings! ❤️' },
+                { label: '🆕 New Item Launch', sub: '🆕 Exciting New Dish Added to Menu!', bod: 'Hey there! 👋\n\nWe\'ve just added something special to our menu that you\'re going to LOVE.\n\nHead over to our menu and be the first to try it!\n\nFresh, delicious, and crafted just for you 🧑‍🍳' },
+                { label: '🎊 Festival Special', sub: '🎊 Festival Special — Free Delivery + Extra Discounts!', bod: 'Happy celebrations! 🎉\n\nThis festive season, enjoy:\n\n🚚 FREE Delivery on all orders\n🎁 Extra 10% OFF with code FESTIVAL10\n\nCelebrate with great food from Kravings! ❤️' },
+              ].map((tmpl) => (
+                <button
+                  key={tmpl.label}
+                  onClick={() => { setSubject(tmpl.sub); setBody(tmpl.bod); }}
+                  className="w-full text-left p-3 rounded-xl bg-secondary/50 hover:bg-secondary border border-border hover:border-primary/30 transition-all text-sm"
+                >
+                  {tmpl.label}
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
