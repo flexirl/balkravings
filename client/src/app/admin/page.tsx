@@ -158,27 +158,32 @@ export default function AdminDashboard() {
       const ctx = audioContextRef.current
       const now = ctx.currentTime
 
-      // First tone: C5 (523 Hz)
-      const osc1 = ctx.createOscillator()
-      const gain1 = ctx.createGain()
-      osc1.type = "sine"
-      osc1.frequency.value = 523
-      gain1.gain.setValueAtTime(0.3, now)
-      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.15)
-      osc1.connect(gain1).connect(ctx.destination)
-      osc1.start(now)
-      osc1.stop(now + 0.15)
+      // Play the notification beep 3 times (loop) to make it more noticeable
+      for (let i = 0; i < 3; i++) {
+        const offset = i * 0.8; // Space out each beep by 0.8 seconds
 
-      // Second tone: E5 (659 Hz)
-      const osc2 = ctx.createOscillator()
-      const gain2 = ctx.createGain()
-      osc2.type = "sine"
-      osc2.frequency.value = 659
-      gain2.gain.setValueAtTime(0.3, now + 0.18)
-      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.35)
-      osc2.connect(gain2).connect(ctx.destination)
-      osc2.start(now + 0.18)
-      osc2.stop(now + 0.35)
+        // First tone: C5 (523 Hz)
+        const osc1 = ctx.createOscillator()
+        const gain1 = ctx.createGain()
+        osc1.type = "sine"
+        osc1.frequency.value = 523
+        gain1.gain.setValueAtTime(0.3, now + offset)
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.2)
+        osc1.connect(gain1).connect(ctx.destination)
+        osc1.start(now + offset)
+        osc1.stop(now + offset + 0.2)
+
+        // Second tone: E5 (659 Hz)
+        const osc2 = ctx.createOscillator()
+        const gain2 = ctx.createGain()
+        osc2.type = "sine"
+        osc2.frequency.value = 659
+        gain2.gain.setValueAtTime(0.3, now + offset + 0.25)
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.5)
+        osc2.connect(gain2).connect(ctx.destination)
+        osc2.start(now + offset + 0.25)
+        osc2.stop(now + offset + 0.5)
+      }
     } catch {
       // Audio not available, silently ignore
     }
