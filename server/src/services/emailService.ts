@@ -59,8 +59,8 @@ const brevoTransporter = nodemailer.createTransport({
   },
 });
 
-const FROM_ADDRESS = `"Kravings Kitchen" <${process.env.ZOHO_EMAIL || 'noreply@kravingskitchen.in'}>`;
-
+// Use explicit sender email for Brevo to match verified sender identity
+const FROM_ADDRESS = `"Kravings Kitchen" <hello@kravingskitchen.in>`;
 // ─── Verify SMTP connections on startup ─────────────────────
 export async function verifyEmailConnection(): Promise<boolean> {
   let zohoOk = false;

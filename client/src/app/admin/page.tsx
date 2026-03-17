@@ -532,9 +532,13 @@ export default function AdminDashboard() {
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)))
       toast.success(`Order status updated to ${orderStatus}`)
 
-      // Fire-and-forget: Send delivery email when order is delivered
+      // Send delivery email when order is marked as delivered
       if (orderStatus === 'delivered') {
-        api.post('/email/order-delivered', { orderId: id }).catch(() => {})
+        try {
+          await api.post('/email/order-delivered', { orderId: id })
+        } catch {
+          console.warn('Delivery email may not have sent')
+        }
       }
     } catch {
       toast.error("Failed to update order")

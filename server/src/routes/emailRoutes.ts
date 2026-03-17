@@ -35,6 +35,7 @@ router.post('/welcome', async (req, res) => {
 // ─── POST /api/email/order-confirmation ────────────────────
 // Triggered after order placement — sends order details
 router.post('/order-confirmation', protect as any, async (req: AuthRequest, res) => {
+  console.log('[EmailRoute] 📨 /order-confirmation hit — orderId:', req.body?.orderId, 'user:', req.user?.email);
   try {
     const { orderId } = req.body;
 
@@ -86,6 +87,7 @@ router.post('/order-confirmation', protect as any, async (req: AuthRequest, res)
 // ─── POST /api/email/order-delivered ───────────────────────
 // Triggered by admin when order status → delivered
 router.post('/order-delivered', protect as any, admin as any, async (req: AuthRequest, res) => {
+  console.log('[EmailRoute] 📨 /order-delivered hit — orderId:', req.body?.orderId, 'user:', req.user?.email);
   try {
     const { orderId } = req.body;
 
