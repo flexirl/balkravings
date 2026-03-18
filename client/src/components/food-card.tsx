@@ -82,7 +82,7 @@ export function FoodCard({ food }: { food: Food }) {
           id: "login-prompt",
           action: {
             label: "Login",
-            onClick: () => router.push("/auth/login"),
+            onClick: () => router.push("/login"),
           },
         })
       }, 1500)
