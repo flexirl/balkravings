@@ -27,6 +27,7 @@ export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [isStoreOpen, setIsStoreOpen] = useState(true);
   const [storeOpensAt, setStoreOpensAt] = useState<string | null>(null);
+  const [closedMessage, setClosedMessage] = useState<string | null>(null);
   const [animateCart, setAnimateCart] = useState(false);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export function Navbar() {
         if (data) {
           setIsStoreOpen(data.is_store_open ?? true);
           setStoreOpensAt(data.store_opens_at ?? null);
+          setClosedMessage(data.closed_message ?? null);
         }
       } catch {}
     };
@@ -48,9 +50,10 @@ export function Navbar() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'settings' },
         (payload) => {
-          const data = payload.new as { is_store_open?: boolean; store_opens_at?: string | null };
+          const data = payload.new as { is_store_open?: boolean; store_opens_at?: string | null; closed_message?: string | null };
           if (data.is_store_open !== undefined) setIsStoreOpen(data.is_store_open);
           if (data.store_opens_at !== undefined) setStoreOpensAt(data.store_opens_at);
+          if (data.closed_message !== undefined) setClosedMessage(data.closed_message ?? null);
         }
       )
       .subscribe();
@@ -88,7 +91,7 @@ export function Navbar() {
   return (
     <>
       <LaunchBanner />
-      <StoreBanner isStoreOpen={isStoreOpen} storeOpensAt={storeOpensAt} />
+      <StoreBanner isStoreOpen={isStoreOpen} storeOpensAt={storeOpensAt} closedMessage={closedMessage} />
 
       <nav className="sticky top-0 z-50 w-full bg-background/90 backdrop-blur-md border-b border-border shadow-sm">
         <div className="container mx-auto flex items-center justify-between h-16 px-4 relative">

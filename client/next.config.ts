@@ -1,25 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
-      },
-      {
-        protocol: "https",
-        hostname: "res.cloudinary.com",
-      },
-      {
-        protocol: "https",
-        hostname: "hptyfnfkfiylfaohbgtj.supabase.co",
-      },
-      {
-        protocol: "https",
-        hostname: "api.dicebear.com",
-      },
-    ],
+    loader: "custom",
+    loaderFile: "./src/lib/image-loader.ts",
   },
 };
 

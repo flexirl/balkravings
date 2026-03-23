@@ -13,14 +13,18 @@ import api from "@/lib/api"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import { useAdminTab } from "./layout"
+import { ReviewsTab } from "@/components/admin-reviews-tab"
 
 interface AppSettings {
   id?: string
   delivery_fee: number
-  gst_percent: number
+  custom_charge_label: string | null
+  custom_charge_type: 'flat' | 'percent'
+  custom_charge_value: number
   free_delivery_above: number
   is_store_open: boolean
   store_opens_at: string | null
+  closed_message: string | null
   banner_image: string | null
   banner_enabled: boolean
 }
@@ -75,6 +79,10 @@ import {
   Mail,
   Send,
   Image as ImageIcon,
+  CalendarDays,
+  TrendingUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { DashboardStatsSkeleton, AdminOrderSkeleton, AdminFoodSkeleton } from "@/components/skeleton-loaders"
 
@@ -123,6 +131,8 @@ export default function AdminDashboard() {
   const audioContextRef = useRef<AudioContext | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [, setTick] = useState(0) // Force re-render for prep timer
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null)
+  const [calendarMonth, setCalendarMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
 
   // Request notification permission on mount
   useEffect(() => {
@@ -149,8 +159,8 @@ export default function AdminDashboard() {
     }
   }
 
-  // Play a two-tone notification beep using Web Audio API
-  const playNotificationSound = () => {
+  // Play beep tones using Web Audio API
+  const playBeepTones = () => {
     try {
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
@@ -158,34 +168,116 @@ export default function AdminDashboard() {
       const ctx = audioContextRef.current
       const now = ctx.currentTime
 
-      // Play the notification beep 3 times (loop) to make it more noticeable
-      for (let i = 0; i < 3; i++) {
-        const offset = i * 0.8; // Space out each beep by 0.8 seconds
+      // Add a compressor to maximize loudness without distortion
+      const compressor = ctx.createDynamicsCompressor()
+      compressor.threshold.setValueAtTime(-10, now)
+      compressor.knee.setValueAtTime(0, now)
+      compressor.ratio.setValueAtTime(20, now)
+      compressor.attack.setValueAtTime(0, now)
+      compressor.release.setValueAtTime(0.05, now)
+      compressor.connect(ctx.destination)
 
-        // First tone: C5 (523 Hz)
+      // 5 urgent beep cycles — ascending urgency pattern
+      for (let i = 0; i < 5; i++) {
+        const offset = i * 0.6
+
         const osc1 = ctx.createOscillator()
         const gain1 = ctx.createGain()
-        osc1.type = "sine"
-        osc1.frequency.value = 523
-        gain1.gain.setValueAtTime(0.3, now + offset)
-        gain1.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.2)
-        osc1.connect(gain1).connect(ctx.destination)
+        osc1.type = "square"
+        osc1.frequency.value = 587
+        gain1.gain.setValueAtTime(1.0, now + offset)
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.15)
+        osc1.connect(gain1).connect(compressor)
         osc1.start(now + offset)
-        osc1.stop(now + offset + 0.2)
+        osc1.stop(now + offset + 0.15)
 
-        // Second tone: E5 (659 Hz)
         const osc2 = ctx.createOscillator()
         const gain2 = ctx.createGain()
-        osc2.type = "sine"
-        osc2.frequency.value = 659
-        gain2.gain.setValueAtTime(0.3, now + offset + 0.25)
-        gain2.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.5)
-        osc2.connect(gain2).connect(ctx.destination)
-        osc2.start(now + offset + 0.25)
-        osc2.stop(now + offset + 0.5)
+        osc2.type = "square"
+        osc2.frequency.value = 880
+        gain2.gain.setValueAtTime(1.0, now + offset + 0.18)
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.35)
+        osc2.connect(gain2).connect(compressor)
+        osc2.start(now + offset + 0.18)
+        osc2.stop(now + offset + 0.35)
+
+        const osc3 = ctx.createOscillator()
+        const gain3 = ctx.createGain()
+        osc3.type = "square"
+        osc3.frequency.value = 1175
+        gain3.gain.setValueAtTime(1.0, now + offset + 0.38)
+        gain3.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.55)
+        osc3.connect(gain3).connect(compressor)
+        osc3.start(now + offset + 0.38)
+        osc3.stop(now + offset + 0.55)
       }
     } catch {
       // Audio not available, silently ignore
+    }
+  }
+
+  // Get a female voice from available browser voices
+  const getFemaleVoice = (): SpeechSynthesisVoice | null => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
+    const voices = window.speechSynthesis.getVoices()
+    // Prefer female/girl voices — common names across browsers
+    const femaleKeywords = ['female', 'woman', 'girl', 'zira', 'samantha', 'karen', 'victoria', 'fiona', 'moira', 'tessa', 'veena', 'google uk english female', 'microsoft zira']
+    const femaleVoice = voices.find(v =>
+      femaleKeywords.some(k => v.name.toLowerCase().includes(k))
+    )
+    // Fallback: any English voice
+    return femaleVoice || voices.find(v => v.lang.startsWith('en')) || null
+  }
+
+  // Speak "New Order for Kravings Kitchen" using Speech Synthesis API (female voice)
+  const speakNewOrder = (times: number = 2): Promise<void> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        resolve()
+        return
+      }
+      let count = 0
+      const speakOnce = () => {
+        if (count >= times) {
+          resolve()
+          return
+        }
+        const utterance = new SpeechSynthesisUtterance("New Order for Kravings Kitchen!")
+        utterance.volume = 1.0
+        utterance.rate = 1.0
+        utterance.pitch = 1.3
+        const voice = getFemaleVoice()
+        if (voice) utterance.voice = voice
+        utterance.onend = () => {
+          count++
+          setTimeout(speakOnce, 400)
+        }
+        utterance.onerror = () => {
+          count++
+          setTimeout(speakOnce, 400)
+        }
+        window.speechSynthesis.speak(utterance)
+      }
+      speakOnce()
+    })
+  }
+
+  // Full notification: [Beep → Voice × 2 → Beep] × 2
+  const playNotificationSound = async () => {
+    for (let round = 0; round < 2; round++) {
+      // Beep start
+      playBeepTones()
+      await new Promise(r => setTimeout(r, 3200))
+
+      // Voice: "New Order for Kravings Kitchen!" × 2
+      await speakNewOrder(2)
+
+      // Beep end
+      playBeepTones()
+      await new Promise(r => setTimeout(r, 3200))
+
+      // Small pause before next round
+      if (round < 4) await new Promise(r => setTimeout(r, 800))
     }
   }
 
@@ -212,6 +304,10 @@ export default function AdminDashboard() {
     is_veg: "true",
   })
 
+  // Food search & filter
+  const [foodSearch, setFoodSearch] = useState("")
+  const [foodCategoryFilter, setFoodCategoryFilter] = useState("all")
+
   // Orders
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(true)
@@ -219,7 +315,7 @@ export default function AdminDashboard() {
   const [orderStatusFilter, setOrderStatusFilter] = useState("all")
 
   // Settings
-  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, gst_percent: 5, free_delivery_above: 0, is_store_open: true, store_opens_at: null, banner_image: null, banner_enabled: false })
+  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, custom_charge_label: null, custom_charge_type: 'flat', custom_charge_value: 0, free_delivery_above: 0, is_store_open: true, store_opens_at: null, closed_message: null, banner_image: null, banner_enabled: false })
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
 
@@ -264,14 +360,14 @@ export default function AdminDashboard() {
       setStatsLoading(true)
       try {
         const [ordersResult, foodsResult, usersResult] = await Promise.all([
-          supabase.from('orders').select('id, total_amount, payment_status'),
+          supabase.from('orders').select('id, total_amount, payment_status, order_status'),
           supabase.from('foods').select('id', { count: 'exact', head: true }),
           supabase.from('profiles').select('id', { count: 'exact', head: true }),
         ])
 
         const allOrders = ordersResult.data || []
-        const paidOrders = allOrders.filter(o => o.payment_status === 'paid')
-        const totalRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total_amount), 0)
+        const deliveredOrders = allOrders.filter(o => o.order_status === 'delivered')
+        const totalRevenue = deliveredOrders.reduce((sum, o) => sum + Number(o.total_amount), 0)
 
         // Fetch recent orders with items
         const { data: recentOrders } = await supabase
@@ -345,13 +441,10 @@ export default function AdminDashboard() {
             .single()
           if (newOrder) {
             setOrders((prev) => [newOrder, ...prev])
-            // Update stats
+            // Update stats (don't add revenue yet — only count on delivery)
             setStats((prev) => prev ? {
               ...prev,
               totalOrders: prev.totalOrders + 1,
-              totalRevenue: newOrder.payment_status === 'paid'
-                ? prev.totalRevenue + Number(newOrder.total_amount)
-                : prev.totalRevenue,
               recentOrders: [newOrder, ...prev.recentOrders].slice(0, 5),
             } : prev)
             // Increment new order badge
@@ -371,7 +464,15 @@ export default function AdminDashboard() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'orders' },
         (payload) => {
-          setOrders((prev) => prev.map((o) => (o.id === payload.new.id ? { ...o, ...payload.new } : o)))
+          const updated = payload.new as Order
+          setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
+          // Add revenue when order is delivered
+          if (updated.order_status === 'delivered') {
+            setStats((prev) => prev ? {
+              ...prev,
+              totalRevenue: prev.totalRevenue + Number(updated.total_amount),
+            } : prev)
+          }
         }
       )
       .on(
@@ -532,14 +633,8 @@ export default function AdminDashboard() {
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)))
       toast.success(`Order status updated to ${orderStatus}`)
 
-      // Send delivery email when order is marked as delivered
-      if (orderStatus === 'delivered') {
-        try {
-          await api.post('/email/order-delivered', { orderId: id })
-        } catch {
-          console.warn('Delivery email may not have sent')
-        }
-      }
+      // Delivery email is sent automatically by the server-side
+      // Realtime listener (orderEmailListener) when status changes to 'delivered'.
     } catch {
       toast.error("Failed to update order")
     }
@@ -813,12 +908,28 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleToggleCouponActive = async (id: string, currentlyActive: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('coupons')
+        .update({ is_active: !currentlyActive })
+        .eq('id', id)
+      if (error) throw error
+      setCoupons((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, is_active: !currentlyActive } : c))
+      )
+      toast.success(currentlyActive ? "Coupon disabled" : "Coupon enabled")
+    } catch {
+      toast.error("Failed to update coupon")
+    }
+  }
+
   return (
     <div className="space-y-6">
 
       {/* Mobile Tab Navigation — only shows on small screens */}
       <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
-        {(["dashboard", "orders", "foods", "settings", "coupons", "offers", "emails"] as const).map((tab) => (
+        {(["dashboard", "orders", "foods", "settings", "coupons", "offers", "emails", "reviews"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -850,7 +961,213 @@ export default function AdminDashboard() {
             <DashboardStatsSkeleton />
           ) : stats ? (
             <>
-              {/* Stats Grid */}
+              {/* ── Today's Stats (2 AM business day) ── */}
+              {(() => {
+                // Business day boundary: 2 AM IST
+                const now = new Date()
+                const businessDayStart = new Date(now)
+                businessDayStart.setHours(2, 0, 0, 0)
+                if (now.getHours() < 2) businessDayStart.setDate(businessDayStart.getDate() - 1)
+
+                const todayOrders = orders.filter(o => new Date(o.created_at) >= businessDayStart)
+                const todayDelivered = todayOrders.filter(o => o.order_status === 'delivered')
+                const todayRevenue = todayDelivered.reduce((sum, o) => sum + Number(o.total_amount), 0)
+
+                return (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card className="bg-card border-border border-primary/20">
+                      <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Today&apos;s Orders</CardTitle>
+                        <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                          <Package className="h-4 w-4 text-primary" />
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-3xl font-bold">{todayOrders.length}</div>
+                        <p className="text-xs text-muted-foreground mt-1">Since {businessDayStart.toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-card border-border border-green-500/20">
+                      <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Today&apos;s Revenue</CardTitle>
+                        <div className="h-9 w-9 rounded-xl bg-green-500/10 flex items-center justify-center">
+                          <TrendingUp className="h-4 w-4 text-green-400" />
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-3xl font-bold text-green-400">₹{todayRevenue.toLocaleString()}</div>
+                        <p className="text-xs text-muted-foreground mt-1">Business day resets at 2:00 AM</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )
+              })()}
+
+              {/* ── Calendar & Daily View ── */}
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <CalendarDays className="h-5 w-5 text-primary" />
+                    Daily History
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const year = calendarMonth.getFullYear()
+                    const month = calendarMonth.getMonth()
+                    const firstDay = new Date(year, month, 1).getDay()
+                    const daysInMonth = new Date(year, month + 1, 0).getDate()
+                    const today = new Date()
+                    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+                    // Helper: get business day boundaries for a date
+                    const getBusinessDay = (date: Date) => {
+                      const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 2, 0, 0)
+                      const end = new Date(start)
+                      end.setDate(end.getDate() + 1)
+                      return { start, end }
+                    }
+
+                    // Precompute daily stats for the visible month
+                    const dailyStats: Record<string, { count: number; revenue: number; orders: Order[] }> = {}
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const dateObj = new Date(year, month, d)
+                      const { start, end } = getBusinessDay(dateObj)
+                      const dayOrders = orders.filter(o => {
+                        const t = new Date(o.created_at)
+                        return t >= start && t < end
+                      })
+                      if (dayOrders.length > 0) {
+                        const key = `${year}-${month}-${d}`
+                        const deliveredDayOrders = dayOrders.filter(o => o.order_status === 'delivered')
+                        dailyStats[key] = {
+                          count: dayOrders.length,
+                          revenue: deliveredDayOrders.reduce((s, o) => s + Number(o.total_amount), 0),
+                          orders: dayOrders,
+                        }
+                      }
+                    }
+
+                    const selectedKey = selectedCalendarDate
+                      ? `${selectedCalendarDate.getFullYear()}-${selectedCalendarDate.getMonth()}-${selectedCalendarDate.getDate()}`
+                      : null
+                    const selectedStats = selectedKey ? dailyStats[selectedKey] || null : null
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Month navigation */}
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => setCalendarMonth(new Date(year, month - 1, 1))}
+                            className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-secondary transition-colors"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <span className="text-sm font-semibold">{monthNames[month]} {year}</span>
+                          <button
+                            onClick={() => {
+                              const next = new Date(year, month + 1, 1)
+                              if (next <= today) setCalendarMonth(next)
+                            }}
+                            disabled={month === today.getMonth() && year === today.getFullYear()}
+                            className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {/* Day headers */}
+                        <div className="grid grid-cols-7 text-center text-[11px] text-muted-foreground font-medium">
+                          {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d}>{d}</div>)}
+                        </div>
+
+                        {/* Calendar grid */}
+                        <div className="grid grid-cols-7 gap-1">
+                          {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
+                          {Array.from({ length: daysInMonth }).map((_, i) => {
+                            const d = i + 1
+                            const key = `${year}-${month}-${d}`
+                            const dayStat = dailyStats[key]
+                            const isSelected = selectedCalendarDate?.getDate() === d && selectedCalendarDate?.getMonth() === month && selectedCalendarDate?.getFullYear() === year
+                            const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+                            const isFuture = new Date(year, month, d) > today
+
+                            return (
+                              <button
+                                key={d}
+                                disabled={isFuture}
+                                onClick={() => setSelectedCalendarDate(new Date(year, month, d))}
+                                className={`relative h-10 rounded-lg text-sm font-medium transition-all ${
+                                  isSelected
+                                    ? 'bg-primary text-primary-foreground'
+                                    : isToday
+                                    ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
+                                    : isFuture
+                                    ? 'text-muted-foreground/30 cursor-default'
+                                    : 'hover:bg-secondary text-foreground'
+                                }`}
+                              >
+                                {d}
+                                {dayStat && !isSelected && (
+                                  <span className={`absolute bottom-1 left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full ${
+                                    dayStat.revenue >= 500 ? 'bg-green-400' : 'bg-primary/50'
+                                  }`} />
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        {/* Selected day detail */}
+                        {selectedCalendarDate && (
+                          <div className="mt-4 p-4 rounded-xl bg-secondary/50 border border-border space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-semibold text-sm">
+                                {selectedCalendarDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                              </h4>
+                              <button onClick={() => setSelectedCalendarDate(null)} className="text-muted-foreground hover:text-foreground">
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                            {selectedStats ? (
+                              <>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="p-3 rounded-lg bg-background border border-border">
+                                    <p className="text-xs text-muted-foreground">Orders</p>
+                                    <p className="text-xl font-bold">{selectedStats.count}</p>
+                                  </div>
+                                  <div className="p-3 rounded-lg bg-background border border-border">
+                                    <p className="text-xs text-muted-foreground">Revenue</p>
+                                    <p className="text-xl font-bold text-green-400">₹{selectedStats.revenue.toLocaleString()}</p>
+                                  </div>
+                                </div>
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                  {selectedStats.orders.map((order, idx) => (
+                                    <div key={order.id} className="flex items-center gap-3 p-2 rounded-lg bg-background/50 text-sm">
+                                      <span className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary flex-shrink-0">
+                                        {idx + 1}
+                                      </span>
+                                      <span className="flex-1 truncate">{order.customer_name || 'Customer'}</span>
+                                      <span className="text-muted-foreground text-xs">
+                                        {new Date(order.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                      </span>
+                                      <span className="font-semibold text-green-400">₹{Number(order.total_amount)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-muted-foreground text-sm text-center py-4">No orders on this day</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </CardContent>
+              </Card>
+
+              {/* ── All-Time Stats ── */}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {[
                   { title: "Total Revenue", value: `₹${stats.totalRevenue.toLocaleString()}`, icon: IndianRupee, color: "text-green-400" },
@@ -931,6 +1248,43 @@ export default function AdminDashboard() {
               {showAddForm ? "Cancel" : "Add Item"}
             </Button>
           </div>
+
+          {/* Search & Category Filter */}
+          {!showAddForm && foods.length > 0 && (
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search food items..."
+                  value={foodSearch}
+                  onChange={(e) => setFoodSearch(e.target.value)}
+                  className="h-10 pl-9 rounded-xl bg-secondary border-border"
+                />
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                <button
+                  onClick={() => setFoodCategoryFilter("all")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${foodCategoryFilter === "all" ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground border border-border"}`}
+                >
+                  All ({foods.length})
+                </button>
+                {(() => {
+                  // Build normalized category map: trimmed+lowered -> display name
+                  const catMap = new Map<string, string>()
+                  foods.forEach(f => { const key = f.category.trim().toLowerCase(); if (!catMap.has(key)) catMap.set(key, f.category.trim()) })
+                  return Array.from(catMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, display]) => (
+                    <button
+                      key={key}
+                      onClick={() => setFoodCategoryFilter(key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${foodCategoryFilter === key ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground border border-border"}`}
+                    >
+                      {display} ({foods.filter(f => f.category.trim().toLowerCase() === key).length})
+                    </button>
+                  ))
+                })()}
+              </div>
+            </div>
+          )}
 
           {/* Add Food Form */}
           {showAddForm && (
@@ -1069,88 +1423,125 @@ export default function AdminDashboard() {
                 .slice(0, 5)
                 .map(([name]) => name.toLowerCase())
 
+              // Filter by search and category (normalized: trim + lowercase)
+              const filteredFoods = foods
+                .filter(f => foodCategoryFilter === "all" || f.category.trim().toLowerCase() === foodCategoryFilter)
+                .filter(f => !foodSearch.trim() || f.name.toLowerCase().includes(foodSearch.trim().toLowerCase()))
+                .sort((a, b) => a.category.trim().toLowerCase().localeCompare(b.category.trim().toLowerCase()))
+
+              if (filteredFoods.length === 0) {
+                return (
+                  <div className="text-center py-12">
+                    <Search className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground">No items match your search{foodCategoryFilter !== 'all' ? ` in "${foodCategoryFilter}"` : ''}.</p>
+                  </div>
+                )
+              }
+
+              // Group by category for section headers (normalized)
+              const catDisplayMap = new Map<string, string>()
+              filteredFoods.forEach(f => { const key = f.category.trim().toLowerCase(); if (!catDisplayMap.has(key)) catDisplayMap.set(key, f.category.trim()) })
+              const categories = Array.from(catDisplayMap.entries())
+
               return (
-              <div className="grid gap-4">
-              {foods.map((food) => {
+              <div className="space-y-6">
+              {categories.map(([catKey, catDisplay]) => (
+                <div key={catKey}>
+                  {(foodCategoryFilter === "all" && categories.length > 1) && (
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <span className="h-px flex-1 bg-border" />
+                      {catDisplay} ({filteredFoods.filter(f => f.category.trim().toLowerCase() === catKey).length})
+                      <span className="h-px flex-1 bg-border" />
+                    </h3>
+                  )}
+                  <div className="grid gap-3">
+              {filteredFoods.filter(f => f.category.trim().toLowerCase() === catKey).map((food) => {
                 const isBestSeller = topItems.includes(food.name.toLowerCase())
                 const orderCount = itemCounts[food.name] || 0
                 return (
                 <div
                   key={food.id}
-                  className={`flex items-center gap-4 p-4 rounded-xl bg-card border transition-colors ${isBestSeller ? 'border-amber-500/30 bg-amber-500/[0.03]' : 'border-border hover:border-border/80'}`}
+                  className={`p-4 rounded-xl bg-card border transition-colors overflow-hidden ${isBestSeller ? 'border-amber-500/30 bg-amber-500/[0.03]' : 'border-border hover:border-border/80'}`}
                 >
-                  <div className="relative h-16 w-16 rounded-xl overflow-hidden border border-border flex-shrink-0">
-                    <Image src={food.image} alt={food.name} fill className="object-cover" />
-                    {isBestSeller && (
-                      <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-amber-500 flex items-center justify-center text-white text-[10px]">🔥</div>
-                    )}
-                  </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-lg truncate flex-1">{food.name}</h3>
-                          {isBestSeller && (
-                            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-semibold shrink-0">
-                              🔥 Best Seller
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
-                            className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-                              food.availability
-                                ? "bg-green-500/10 text-green-400 hover:bg-green-500/20"
-                                : "bg-destructive/10 text-destructive hover:bg-destructive/20"
-                            }`}
-                          >
-                            {food.availability ? "In Stock" : "Out of Stock"}
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 mt-1.5 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1.5 bg-secondary px-2.5 py-1 rounded-lg text-primary font-medium border border-border">{food.category}</span>
-                          <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium border border-border ${food.is_veg !== false ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                            <div className={`w-2 h-2 rounded-full ${food.is_veg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
-                            {food.is_veg !== false ? 'Veg' : 'Non-Veg'}
+                  <div className="flex items-start gap-3">
+                    <div className="relative h-16 w-16 rounded-xl overflow-hidden border border-border flex-shrink-0">
+                      <Image src={food.image} alt={food.name} fill className="object-cover" />
+                      {isBestSeller && (
+                        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-amber-500 flex items-center justify-center text-white text-[10px]">🔥</div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-base sm:text-lg truncate">{food.name}</h3>
+                        {isBestSeller && (
+                          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-semibold shrink-0">
+                            🔥 Best Seller
                           </span>
-                          {orderCount > 0 && (
-                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium border border-blue-500/10">
-                              {orderCount} ordered
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{food.description}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1.5 bg-secondary px-2.5 py-1 rounded-lg text-primary font-medium border border-border">{food.category}</span>
+                        <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium border border-border ${food.is_veg !== false ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                          <div className={`w-2 h-2 rounded-full ${food.is_veg !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                          {food.is_veg !== false ? 'Veg' : 'Non-Veg'}
+                        </span>
+                        {orderCount > 0 && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium border border-blue-500/10">
+                            {orderCount} ordered
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 transition-colors ${
+                            food.availability
+                              ? "bg-green-500/10 text-green-400 hover:bg-green-500/20"
+                              : "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                          }`}
+                        >
+                          {food.availability ? "In Stock" : "Out of Stock"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2 break-words">{food.description}</p>
+                    </div>
                   </div>
-                  <span className="text-sm font-bold text-primary flex-shrink-0">₹{food.price}</span>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
-                      title={food.availability ? "Mark unavailable" : "Mark available"}
-                    >
-                      {food.availability ? <Eye className="h-4 w-4 text-green-400" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 rounded-lg text-blue-500 hover:text-blue-400 hover:bg-blue-500/10"
-                      onClick={() => handleEditClick(food)}
-                      title="Edit food"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDeleteFood(food.id)}
-                      title="Delete food"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
+                    <span className="text-sm font-bold text-primary">₹{food.price}</span>
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => handleToggleFoodAvailability(food.id, food.availability)}
+                        title={food.availability ? "Mark unavailable" : "Mark available"}
+                      >
+                        {food.availability ? <Eye className="h-4 w-4 text-green-400" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 rounded-lg text-blue-500 hover:text-blue-400 hover:bg-blue-500/10"
+                        onClick={() => handleEditClick(food)}
+                        title="Edit food"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDeleteFood(food.id)}
+                        title="Delete food"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
                 )
               })}
+              </div>
+              </div>
+              ))}
               </div>
               )
             })()}</>
@@ -1376,7 +1767,7 @@ export default function AdminDashboard() {
         <div className="space-y-6">
           <div>
             <h2 className="text-2xl font-bold">Settings</h2>
-            <p className="text-muted-foreground text-sm mt-1">Configure delivery fees, GST, and charges</p>
+            <p className="text-muted-foreground text-sm mt-1">Configure delivery fees, charges, and store settings</p>
           </div>
 
           <Card className="bg-card border-border">
@@ -1534,6 +1925,57 @@ export default function AdminDashboard() {
                         </div>
                         )
                       })()}
+
+                      {/* Custom Closed Message */}
+                      {!appSettings.is_store_open && (
+                        <div className="w-full mt-4 space-y-2">
+                          <Label className="text-xs">Custom Closed Message (Optional)</Label>
+                          <textarea
+                            placeholder='e.g. "Opening in 2 hrs — too many preorders!"'
+                            maxLength={200}
+                            value={appSettings.closed_message || ""}
+                            onChange={(e) => setAppSettings({ ...appSettings, closed_message: e.target.value || null })}
+                            onBlur={async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('settings')
+                                  .update({ closed_message: appSettings.closed_message })
+                                  .eq('id', appSettings.id || '')
+                                if (error) throw error
+                                toast.success("Closed message updated")
+                              } catch {
+                                toast.error("Failed to update message")
+                              }
+                            }}
+                            className="w-full h-20 px-3 py-2 rounded-xl bg-background border border-border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground/60"
+                          />
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] text-muted-foreground">
+                              Shown on the closed banner to all customers
+                            </p>
+                            <span className="text-[11px] text-muted-foreground">
+                              {(appSettings.closed_message || "").length}/200
+                            </span>
+                          </div>
+                          {appSettings.closed_message && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setAppSettings({ ...appSettings, closed_message: null })
+                                try {
+                                  await supabase.from('settings').update({ closed_message: null }).eq('id', appSettings.id || '')
+                                  toast.success("Closed message cleared")
+                                } catch {
+                                  toast.error("Failed to clear message")
+                                }
+                              }}
+                              className="text-xs text-destructive hover:text-destructive/80 transition-colors"
+                            >
+                              Clear message
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1554,17 +1996,6 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm">GST (%)</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={appSettings.gst_percent}
-                        onChange={(e) => setAppSettings({ ...appSettings, gst_percent: parseFloat(e.target.value) || 0 })}
-                        className="h-10 rounded-xl bg-secondary border-border"
-                      />
-                    </div>
-                    <div className="space-y-2">
                       <Label className="text-sm">Free Delivery Above (₹)</Label>
                       <Input
                         type="number"
@@ -1577,6 +2008,49 @@ export default function AdminDashboard() {
                       <p className="text-[11px] text-muted-foreground">Set to 0 to always charge delivery fee</p>
                     </div>
                   </div>
+                  </div>
+
+                  <Separator className="bg-border" />
+
+                  {/* Custom Charge */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Custom Charge (Optional)</h3>
+                    <p className="text-xs text-muted-foreground -mt-2">Add a custom surcharge like LPG Surge, High Demand Fee, Platform Fee, etc. Leave label empty to disable.</p>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Charge Label</Label>
+                        <Input
+                          placeholder='e.g. "LPG Surge Charge"'
+                          maxLength={50}
+                          value={appSettings.custom_charge_label || ""}
+                          onChange={(e) => setAppSettings({ ...appSettings, custom_charge_label: e.target.value || null })}
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm">Charge Type</Label>
+                        <select
+                          value={appSettings.custom_charge_type}
+                          onChange={(e) => setAppSettings({ ...appSettings, custom_charge_type: e.target.value as 'flat' | 'percent' })}
+                          className="w-full h-10 px-3 rounded-xl bg-secondary border border-border text-sm"
+                        >
+                          <option value="flat">Flat Amount (₹)</option>
+                          <option value="percent">Percentage (%)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm">Charge Value {appSettings.custom_charge_type === 'percent' ? '(%)' : '(₹)'}</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={appSettings.custom_charge_type === 'percent' ? 100 : undefined}
+                          placeholder="0 = no charge"
+                          value={appSettings.custom_charge_value}
+                          onChange={(e) => setAppSettings({ ...appSettings, custom_charge_value: parseFloat(e.target.value) || 0 })}
+                          className="h-10 rounded-xl bg-secondary border-border"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <Separator className="bg-border" />
@@ -1883,6 +2357,15 @@ export default function AdminDashboard() {
                     <Button
                       size="icon"
                       variant="ghost"
+                      className={`h-8 w-8 rounded-lg ${coupon.is_active ? 'text-green-500 hover:text-green-400 hover:bg-green-500/10' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}
+                      onClick={() => handleToggleCouponActive(coupon.id, coupon.is_active)}
+                      title={coupon.is_active ? "Disable coupon" : "Enable coupon"}
+                    >
+                      {coupon.is_active ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
                       className="h-8 w-8 rounded-lg text-blue-500 hover:text-blue-400 hover:bg-blue-500/10"
                       onClick={() => handleEditCouponClick(coupon)}
                       title="Edit coupon"
@@ -2002,15 +2485,27 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ==================== EMAILS TAB ==================== */}
       {activeTab === "emails" && (
         <EmailsTab />
+      )}
+
+      {/* ==================== REVIEWS TAB ==================== */}
+      {activeTab === "reviews" && (
+        <ReviewsTab />
       )}
     </div>
   )
 }
 
 // ─── Emails Tab Component ──────────────────────────────────
+interface EmailSegment {
+  key: string
+  label: string
+  icon: string
+  description: string
+  count: number
+}
+
 function EmailsTab() {
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
@@ -2019,16 +2514,30 @@ function EmailsTab() {
   const [imagePreview, setImagePreview] = useState("")
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [customerCount, setCustomerCount] = useState<number | null>(null)
   const [lastResult, setLastResult] = useState<{ sent: number; failed: number; total: number } | null>(null)
   const [showPreview, setShowPreview] = useState(false)
 
-  // Fetch customer count on mount
+  // Segments
+  const [segments, setSegments] = useState<EmailSegment[]>([])
+  const [segmentsLoading, setSegmentsLoading] = useState(true)
+  const [selectedSegment, setSelectedSegment] = useState("all")
+
+  // Fetch segments on mount
   useEffect(() => {
-    api.get('/email/customers')
-      .then(res => setCustomerCount(res.data.total))
-      .catch(() => setCustomerCount(null))
+    setSegmentsLoading(true)
+    api.get('/email/segments')
+      .then(res => {
+        setSegments(res.data.segments || [])
+      })
+      .catch(() => {
+        // Fallback: just show "all" with unknown count
+        setSegments([{ key: 'all', label: 'All Customers', icon: '👥', description: 'Everyone', count: 0 }])
+      })
+      .finally(() => setSegmentsLoading(false))
   }, [])
+
+  const activeSegment = segments.find(s => s.key === selectedSegment)
+  const recipientCount = activeSegment?.count ?? 0
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -2036,7 +2545,6 @@ function EmailsTab() {
     setImageFile(file)
     setImagePreview(URL.createObjectURL(file))
 
-    // Upload to Supabase Storage
     setUploading(true)
     try {
       const fileExt = file.name.split('.').pop()
@@ -2066,7 +2574,8 @@ function EmailsTab() {
       toast.error('Subject and body are required')
       return
     }
-    if (!confirm(`Send this email to ${customerCount ?? 'all'} customers?`)) return
+    const segLabel = activeSegment?.label || selectedSegment
+    if (!confirm(`Send this email to ${recipientCount} customers in "${segLabel}"?`)) return
 
     setSending(true)
     setLastResult(null)
@@ -2075,6 +2584,7 @@ function EmailsTab() {
         subject,
         body: body.replace(/\n/g, '<br/>'),
         imageUrl: imageUrl || undefined,
+        segment: selectedSegment,
       })
       setLastResult(data.result)
       toast.success(data.message)
@@ -2099,9 +2609,55 @@ function EmailsTab() {
           Email Marketing
         </h2>
         <p className="text-muted-foreground text-sm mt-1">
-          Send promotional emails to {customerCount !== null ? <strong>{customerCount}</strong> : 'all'} customers
+          Send targeted emails to customer segments
         </p>
       </div>
+
+      {/* Audience Segment Selector */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Users className="h-4 w-4 text-primary" />
+            Select Audience
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {segmentsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading segments...
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {segments.map((seg) => (
+                <button
+                  key={seg.key}
+                  onClick={() => setSelectedSegment(seg.key)}
+                  className={`flex flex-col items-start p-3 rounded-xl border transition-all text-left ${
+                    selectedSegment === seg.key
+                      ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20'
+                      : 'border-border bg-secondary/30 hover:border-border/80 hover:bg-secondary/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">{seg.icon}</span>
+                    <span className="font-semibold text-sm">{seg.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      selectedSegment === seg.key
+                        ? 'bg-primary/20 text-primary'
+                        : 'bg-secondary text-muted-foreground'
+                    }`}>
+                      {seg.count} users
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-1">{seg.description}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Compose */}
@@ -2129,7 +2685,7 @@ function EmailsTab() {
               <Label htmlFor="email-body" className="text-sm font-medium">Email Body</Label>
               <textarea
                 id="email-body"
-                placeholder="Write your email content here...&#10;&#10;Use line breaks for paragraphs.&#10;HTML tags like <b>bold</b> and <i>italic</i> are supported."
+                placeholder={"Write your email content here...\n\nUse line breaks for paragraphs.\nHTML tags like <b>bold</b> and <i>italic</i> are supported."}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={8}
@@ -2184,13 +2740,13 @@ function EmailsTab() {
               <Button
                 type="button"
                 onClick={handleSendBulk}
-                disabled={sending || !subject.trim() || !body.trim() || uploading}
+                disabled={sending || !subject.trim() || !body.trim() || uploading || recipientCount === 0}
                 className="flex-1 h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground"
               >
                 {sending ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
                 ) : (
-                  <><Send className="mr-2 h-4 w-4" /> Send to All</>  
+                  <><Send className="mr-2 h-4 w-4" /> Send to {recipientCount}</>
                 )}
               </Button>
             </div>
@@ -2211,7 +2767,7 @@ function EmailsTab() {
           </CardContent>
         </Card>
 
-        {/* Preview */}
+        {/* Preview + Templates */}
         <div className="space-y-4">
           {showPreview && (
             <Card className="bg-card border-border">
@@ -2220,14 +2776,12 @@ function EmailsTab() {
               </CardHeader>
               <CardContent>
                 <div className="rounded-xl border border-border overflow-hidden shadow-sm">
-                  {/* Simulated email header */}
                   <div style={{ background: 'linear-gradient(145deg, #af1d1d, #8b1515)' }} className="py-8 px-6 text-center">
                     <div className="inline-block border-2 border-white/30 rounded-xl px-7 py-2 mb-2">
                       <h3 className="text-white text-2xl font-black tracking-[4px]">KRAVINGS</h3>
                     </div>
                     <p className="text-white/70 text-[11px] tracking-[3px] uppercase font-medium">by ARF</p>
                   </div>
-                  {/* Maroon accent line */}
                   <div style={{ height: '4px', background: 'linear-gradient(90deg, #d44040, #af1d1d, #8b1515)' }} />
                   <div className="p-6 bg-white">
                     <div className="text-center mb-5">

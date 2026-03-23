@@ -65,7 +65,9 @@ export default function CheckoutPage() {
 
   // Dynamic fees from settings
   const [deliveryFeeBase, setDeliveryFeeBase] = useState(40)
-  const [gstPercent, setGstPercent] = useState(5)
+  const [customChargeLabel, setCustomChargeLabel] = useState<string | null>(null)
+  const [customChargeType, setCustomChargeType] = useState<'flat' | 'percent'>('flat')
+  const [customChargeValue, setCustomChargeValue] = useState(0)
   const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(0)
   const [isStoreOpen, setIsStoreOpen] = useState(true)
   const [unavailableItems, setUnavailableItems] = useState<string[]>([])
@@ -169,7 +171,9 @@ export default function CheckoutPage() {
         if (settingsResult.data) {
           const data = settingsResult.data
           setDeliveryFeeBase(data.delivery_fee ?? 40)
-          setGstPercent(data.gst_percent ?? 5)
+          setCustomChargeLabel(data.custom_charge_label ?? null)
+          setCustomChargeType(data.custom_charge_type ?? 'flat')
+          setCustomChargeValue(data.custom_charge_value ?? 0)
           setFreeDeliveryAbove(data.free_delivery_above ?? 0)
           setIsStoreOpen(data.is_store_open ?? true)
         }
@@ -190,8 +194,10 @@ export default function CheckoutPage() {
   }, [items])
 
   const deliveryFee = freeDeliveryAbove > 0 && totalAmount >= freeDeliveryAbove ? 0 : deliveryFeeBase
-  const tax = Math.round(totalAmount * (gstPercent / 100))
-  const grandTotal = Math.max(0, totalAmount + deliveryFee + tax - couponDiscount)
+  const customCharge = (customChargeLabel && customChargeValue > 0)
+    ? (customChargeType === 'percent' ? Math.round(totalAmount * (customChargeValue / 100)) : customChargeValue)
+    : 0
+  const grandTotal = Math.max(0, totalAmount + deliveryFee + customCharge - couponDiscount)
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return
@@ -201,7 +207,7 @@ export default function CheckoutPage() {
       try {
         const { data: result, error: rpcError } = await supabase
           .rpc('validate_coupon', {
-            p_coupon_code: couponCode.toUpperCase(),
+            p_coupon_code: couponCode.trim().toUpperCase(),
             p_subtotal: totalAmount,
           })
 
@@ -239,7 +245,7 @@ export default function CheckoutPage() {
       const { data: coupon, error } = await supabase
         .from('coupons')
         .select('*')
-        .eq('code', couponCode.toUpperCase())
+        .eq('code', couponCode.trim().toUpperCase())
         .eq('is_active', true)
         .single()
 
@@ -337,6 +343,11 @@ export default function CheckoutPage() {
     }
     if (items.length === 0) {
       toast.error("Your cart is empty")
+      return
+    }
+    // Anti-spam: Max order value limit for COD
+    if (totalAmount > 3000) {
+      toast.error("For security reasons, Cash on Delivery orders are limited to ₹3000. For bulk orders, please contact us on WhatsApp!")
       return
     }
     if (!phone || !/^[6-9]\d{9}$/.test(phone.replace(/\s/g, ''))) {
@@ -482,16 +493,8 @@ export default function CheckoutPage() {
 
       clearCart()
 
-      // Send order confirmation email (awaited to prevent navigation from cancelling it)
-      try {
-        await Promise.race([
-          api.post('/email/order-confirmation', { orderId }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-        ])
-      } catch {
-        // Email sending is best-effort, don't block the user
-        console.warn('Order confirmation email may not have sent')
-      }
+      // Order confirmation email is sent automatically by the server-side
+      // Realtime listener (orderEmailListener) when the INSERT is detected.
 
       // Anti-spam: Set local cooldown timer after successful order
       const expiresAt = Date.now() + COOLDOWN_MS
@@ -718,10 +721,10 @@ export default function CheckoutPage() {
                     ₹{deliveryFeeBase}
                   </span>
                 </div>
-                {gstPercent > 0 && (
+                {customChargeLabel && customCharge > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">GST ({gstPercent}%)</span>
-                    <span>₹{tax}</span>
+                    <span className="text-muted-foreground">{customChargeLabel}{customChargeType === 'percent' ? ` (${customChargeValue}%)` : ''}</span>
+                    <span>₹{customCharge}</span>
                   </div>
                 )}
 
@@ -731,7 +734,7 @@ export default function CheckoutPage() {
                     <Input
                       placeholder="Coupon code"
                       value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      onChange={(e) => setCouponCode(e.target.value.replace(/\s/g, '').toUpperCase())}
                       className="h-9 rounded-lg bg-secondary border-border text-sm uppercase flex-1"
                     />
                     <Button

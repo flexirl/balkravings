@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, Suspense, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, Package, ArrowRight, Sparkles } from "lucide-react"
 import supabase from "@/lib/supabase"
+import confetti from "canvas-confetti"
 
 interface OrderItem { name: string; quantity: number; price: number }
 
@@ -19,6 +20,65 @@ function OrderSuccessInner() {
     created_at: string
     order_items: OrderItem[]
   } | null>(null)
+
+  // 🎉 Confetti celebration
+  const fireConfetti = useCallback(() => {
+    const duration = 3000
+    const end = Date.now() + duration
+
+    const colors = ["#ff6b35", "#ffa500", "#ff4500", "#ffcc00", "#ff8c00", "#22c55e"]
+
+    // Initial big burst from center
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors,
+      zIndex: 9999,
+    })
+
+    // Continuous side bursts
+    const frame = () => {
+      if (Date.now() > end) return
+
+      confetti({
+        particleCount: 3,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0, y: 0.65 },
+        colors,
+        zIndex: 9999,
+      })
+      confetti({
+        particleCount: 3,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1, y: 0.65 },
+        colors,
+        zIndex: 9999,
+      })
+
+      requestAnimationFrame(frame)
+    }
+
+    // Start side bursts after a short delay
+    setTimeout(frame, 300)
+
+    // Second big burst
+    setTimeout(() => {
+      confetti({
+        particleCount: 60,
+        spread: 100,
+        origin: { y: 0.5, x: 0.5 },
+        colors,
+        zIndex: 9999,
+      })
+    }, 800)
+  }, [])
+
+  useEffect(() => {
+    fireConfetti()
+  }, [fireConfetti])
 
   useEffect(() => {
     if (!orderId) return

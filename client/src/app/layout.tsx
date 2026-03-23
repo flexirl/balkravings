@@ -28,17 +28,28 @@ const bebneue = Bebas_Neue({
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.kravingskitchen.in"),
   title: {
-    default: "Kravings Kitchen by ARF — Late Night Food Delivery in KIIT & Nearby Areas, Bhubaneswar",
+    default: "Kravings Kitchen by ARF — KIIT's Favourite Kitchen | Late Night Food Delivery in Bhubaneswar",
     template: "%s | Kravings Kitchen by ARF",
   },
   description:
-    "Kravings Kitchen — order biryanis, combos, parathas & more. Premium cloud kitchen delivering fresh, affordable meals across KIIT, Patia, Chandrasekharpur & nearby areas in Bhubaneswar. Fast delivery, open till 1 AM!",
+    "Kravings Kitchen — KIIT's favourite kitchen for biryanis, combos, parathas & more. Premium cloud kitchen delivering fresh, affordable meals across KIIT, Patia, Chandrasekharpur & nearby areas in Bhubaneswar. Also known as kitis kitchen. Fast delivery, open till 1 AM!",
   keywords: [
     "Kravings Kitchen",
     "Kravings Kitchen KIIT",
     "Kravings by ARF",
     "Kravings Kitchen Bhubaneswar",
     "kravingskitchen",
+    "kitis kitchen",
+    "kiits kitchen",
+    "kiti's kitchen",
+    "KIIT's kitchen",
+    "kitis kitchen Bhubaneswar",
+    "kitis kitchen KIIT",
+    "kitis kitchen Patia",
+    "kiits kitchen Bhubaneswar",
+    "kitis kitchen food delivery",
+    "kitis kitchen menu",
+    "kitis kitchen near me",
     "food delivery near KIIT",
     "food delivery Patia",
     "food delivery Chandrasekharpur",
@@ -69,9 +80,9 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   openGraph: {
-    title: "Kravings Kitchen by ARF — Food Delivery in KIIT & Nearby Areas",
+    title: "Kravings Kitchen by ARF — KIIT's Favourite Kitchen | Food Delivery in Bhubaneswar",
     description:
-      "Kravings Kitchen — order biryanis, combos & more. Fresh, affordable meals delivered in 20 mins across KIIT, Patia & Bhubaneswar. Open till 1 AM!",
+      "Kravings Kitchen (kitis kitchen) — KIIT's favourite kitchen. Order biryanis, combos & more. Fresh, affordable meals delivered in 20 mins across KIIT, Patia & Bhubaneswar. Open till 1 AM!",
     url: "https://www.kravingskitchen.in",
     siteName: "Kravings Kitchen by ARF",
     images: [
@@ -87,9 +98,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Kravings Kitchen by ARF — Food Delivery in KIIT & Nearby Areas",
+    title: "Kravings Kitchen by ARF — KIIT's Favourite Kitchen | Food Delivery in Bhubaneswar",
     description:
-      "Kravings Kitchen — biryanis, combos & more. Delivered in 20 mins across KIIT, Patia & nearby areas in Bhubaneswar.",
+      "Kravings Kitchen (kitis kitchen) — KIIT's favourite kitchen for biryanis, combos & more. Delivered in 20 mins across KIIT, Patia & Bhubaneswar.",
     images: ["/og-image.jpg"],
   },
   robots: {

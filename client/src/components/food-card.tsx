@@ -101,7 +101,7 @@ export function FoodCard({ food }: { food: Food }) {
           quality={60}
           className={`object-cover transition-transform duration-500 ${food.availability ? "group-hover:scale-110" : ""}`}
         />
-        
+
         {/* Out of Stock Overlay */}
         {!food.availability && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/40 backdrop-blur-[2px]">
@@ -168,11 +168,10 @@ export function FoodCard({ food }: { food: Food }) {
               <Button
                 size="sm"
                 disabled={!food.availability}
-                className={`rounded-xl h-9 px-4 gap-1.5 transition-all ${
-                  food.availability 
-                    ? "bg-primary hover:bg-primary/90 text-primary-foreground active:scale-95" 
+                className={`rounded-xl h-9 px-4 gap-1.5 transition-all ${food.availability
+                    ? "bg-primary hover:bg-primary/90 text-primary-foreground active:scale-95"
                     : "bg-secondary text-muted-foreground w-full"
-                }`}
+                  }`}
                 onClick={handleAdd}
               >
                 {food.availability ? (

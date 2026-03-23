@@ -1,14 +1,15 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Clock, Store } from "lucide-react"
+import { Clock, Store, MessageCircle } from "lucide-react"
 
 interface StoreBannerProps {
   isStoreOpen: boolean
   storeOpensAt: string | null
+  closedMessage?: string | null
 }
 
-export function StoreBanner({ isStoreOpen, storeOpensAt }: StoreBannerProps) {
+export function StoreBanner({ isStoreOpen, storeOpensAt, closedMessage }: StoreBannerProps) {
   const [timeLeft, setTimeLeft] = useState<string>("")
 
   useEffect(() => {
@@ -49,16 +50,25 @@ export function StoreBanner({ isStoreOpen, storeOpensAt }: StoreBannerProps) {
 
   return (
     <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3">
-      <div className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6 text-center">
-        <div className="flex items-center justify-center gap-2 text-destructive font-semibold">
-          <Store className="w-5 h-5" />
-          <span>We are currently closed</span>
+      <div className="container mx-auto flex flex-col items-center justify-center gap-2 text-center">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6">
+          <div className="flex items-center justify-center gap-2 text-destructive font-semibold">
+            <Store className="w-5 h-5" />
+            <span>We are currently closed</span>
+          </div>
+          
+          {storeOpensAt && timeLeft && (
+            <div className="flex items-center gap-2 text-sm sm:text-base text-foreground font-medium bg-background/50 px-3 py-1 rounded-full border border-border">
+              <Clock className="w-4 h-4 text-primary animate-pulse" />
+              Opens in: <span className="font-mono text-primary w-[80px] text-left">{timeLeft}</span>
+            </div>
+          )}
         </div>
-        
-        {storeOpensAt && timeLeft && (
-          <div className="flex items-center gap-2 text-sm sm:text-base text-foreground font-medium bg-background/50 px-3 py-1 rounded-full border border-border">
-            <Clock className="w-4 h-4 text-primary animate-pulse" />
-            Opens in: <span className="font-mono text-primary w-[80px] text-left">{timeLeft}</span>
+
+        {closedMessage && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+            <MessageCircle className="w-4 h-4 shrink-0 text-primary" />
+            <span>{closedMessage}</span>
           </div>
         )}
       </div>

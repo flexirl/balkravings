@@ -1,36 +1,14 @@
 import Link from "next/link";
-import { ChefHat, MapPin, Phone, Clock, Instagram, Facebook, Twitter } from "lucide-react";
+import { MapPin, Phone, Clock } from "lucide-react";
+import { BrandFlipCard } from "./brand-flip-card";
 
 export function Footer() {
   return (
     <footer className="bg-card border-t border-border pt-16 pb-8">
       <div className="container mx-auto px-4 md:px-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
-          {/* Brand */}
-          <div className="md:col-span-1">
-            <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center">
-                <ChefHat className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <span className="font-[family-name:var(--font-galindo)] text-xl leading-none tracking-wide text-primary">KRAVINGS <br />by ARF</span>
-              </div>
-            </Link>
-            <p className="text-muted-foreground text-sm mb-6 max-w-xs">
-              Premium cloud kitchen serving hot, hygiene-first, and chef-crafted meals for students & professionals across KIIT, Patia & nearby areas in Bhubaneswar.
-            </p>
-            <div className="flex items-center gap-4">
-              <Link href="https://www.instagram.com/kravings_by.arf/" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
-                <Instagram className="h-5 w-5" />
-              </Link>
-              <Link href="https://facebook.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
-                <Facebook className="h-5 w-5" />
-              </Link>
-              <Link href="https://twitter.com/kravingsbyarf" target="_blank" rel="noopener noreferrer" className="h-10 w-10 flex items-center justify-center rounded-full bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground transition-all">
-                <Twitter className="h-5 w-5" />
-              </Link>
-            </div>
-          </div>
+          {/* Animated Brand Column — flips between Kravings & Flexirl */}
+          <BrandFlipCard />
 
           {/* Quick Links */}
           <div>
@@ -86,10 +64,11 @@ export function Footer() {
           </p>
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             Made with <span className="text-red-500">♥</span> for kiitians
-            <a href="https://www.flexirl.com">  by Flexirl.com</a>
+            <a href="https://www.flexirl.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">&nbsp;by Flexirl.com</a>
           </p>
         </div>
       </div>
     </footer>
   );
 }
+

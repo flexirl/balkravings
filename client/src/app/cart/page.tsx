@@ -10,6 +10,7 @@ import Link from "next/link"
 import Image from "next/image"
 
 import { EmptyCart } from "@/components/empty-states"
+import { CartSuggestions } from "@/components/cart-suggestions"
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, clearCart, totalAmount } = useCart()
@@ -19,7 +20,9 @@ export default function CartPage() {
   
   // Dynamic Fees
   const [deliveryFeeBase, setDeliveryFeeBase] = useState(40)
-  const [gstPercent, setGstPercent] = useState(5)
+  const [customChargeLabel, setCustomChargeLabel] = useState<string | null>(null)
+  const [customChargeType, setCustomChargeType] = useState<'flat' | 'percent'>('flat')
+  const [customChargeValue, setCustomChargeValue] = useState(0)
   const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(0)
 
   useEffect(() => {
@@ -38,7 +41,9 @@ export default function CartPage() {
         if (settingsData) {
           setIsStoreOpen(settingsData.is_store_open ?? true)
           setDeliveryFeeBase(settingsData.delivery_fee ?? 0)
-          setGstPercent(settingsData.gst_percent ?? 0)
+          setCustomChargeLabel(settingsData.custom_charge_label ?? null)
+          setCustomChargeType(settingsData.custom_charge_type ?? 'flat')
+          setCustomChargeValue(settingsData.custom_charge_value ?? 0)
           setFreeDeliveryAbove(settingsData.free_delivery_above ?? 0)
         }
 
@@ -70,8 +75,10 @@ export default function CartPage() {
   }
 
   const deliveryFee = freeDeliveryAbove > 0 && totalAmount >= freeDeliveryAbove ? 0 : deliveryFeeBase
-  const tax = Math.round(totalAmount * (gstPercent / 100))
-  const grandTotal = totalAmount + deliveryFee + tax
+  const customCharge = (customChargeLabel && customChargeValue > 0)
+    ? (customChargeType === 'percent' ? Math.round(totalAmount * (customChargeValue / 100)) : customChargeValue)
+    : 0
+  const grandTotal = totalAmount + deliveryFee + customCharge
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-10">
@@ -143,6 +150,9 @@ export default function CartPage() {
           >
             Clear all items
           </button>
+
+          {/* Smart Suggestions */}
+          <CartSuggestions />
         </div>
 
         {/* Order Summary */}
@@ -167,10 +177,10 @@ export default function CartPage() {
                 </span>
               </div>
 
-              {gstPercent > 0 && (
+              {customChargeLabel && customCharge > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax ({gstPercent}%)</span>
-                  <span>₹{tax}</span>
+                  <span className="text-muted-foreground">{customChargeLabel}{customChargeType === 'percent' ? ` (${customChargeValue}%)` : ''}</span>
+                  <span>₹{customCharge}</span>
                 </div>
               )}
               
