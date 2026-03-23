@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Package, ShoppingCart, Check, ChefHat, Truck, CircleX } from "lucide-react"
 import { OrderCardSkeleton } from "@/components/skeleton-loaders"
 import { EmptyOrders } from "@/components/empty-states"
+import { ReviewPrompt } from "@/components/review-prompt"
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh"
 import supabase from "@/lib/supabase"
 import { toast } from "sonner"
@@ -95,6 +96,9 @@ export default function OrdersPage() {
   const { addToCart } = useCart()
   const router = useRouter()
 
+  // Track which orders have been reviewed
+  const [reviewedOrderIds, setReviewedOrderIds] = useState<Set<string>>(new Set())
+
   // Auth guard
   useEffect(() => {
     if (!authLoading && !user) {
@@ -124,6 +128,19 @@ export default function OrdersPage() {
       }
     }
     fetchOrders()
+
+    // Fetch reviewed order IDs
+    const fetchReviewed = async () => {
+      if (!user) return
+      const { data } = await supabase
+        .from('reviews')
+        .select('order_id')
+        .eq('user_id', user.id)
+      if (data) {
+        setReviewedOrderIds(new Set(data.map(r => r.order_id)))
+      }
+    }
+    fetchReviewed()
   }, [user])
 
   // Real-time order status updates
@@ -273,6 +290,14 @@ export default function OrdersPage() {
 
               {/* Order Timeline */}
               <OrderTimeline status={order.order_status} />
+
+              {/* Review Prompt — only for delivered, unreviewed orders */}
+              {order.order_status === "delivered" && !reviewedOrderIds.has(order.id) && (
+                <ReviewPrompt
+                  orderId={order.id}
+                  onReviewSubmitted={() => setReviewedOrderIds(prev => new Set(prev).add(order.id))}
+                />
+              )}
             </div>
           ))}
         </div>

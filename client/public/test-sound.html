@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Notification Sound</title>
+  <style>
+    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #111; color: #fff; gap: 20px; }
+    button { font-size: 24px; padding: 20px 40px; border: none; border-radius: 12px; background: #f97316; color: white; cursor: pointer; }
+    button:hover { background: #ea580c; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { font-size: 16px; color: #aaa; min-height: 24px; }
+    .stop-btn { font-size: 16px; padding: 10px 24px; background: #ef4444; display: none; }
+  </style>
+</head>
+<body>
+  <button id="playBtn" onclick="playNotificationSound()">🔔 Play Notification Sound</button>
+  <button id="stopBtn" class="stop-btn" onclick="stopAll()">⏹ Stop</button>
+  <div class="status" id="status"></div>
+
+  <script>
+    let audioContext = null;
+    let stopped = false;
+    const statusEl = document.getElementById('status');
+    const playBtn = document.getElementById('playBtn');
+    const stopBtn = document.getElementById('stopBtn');
+
+    // Load voices (some browsers need this)
+    if ('speechSynthesis' in window) {
+      speechSynthesis.getVoices();
+      speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+    }
+
+    function getFemaleVoice() {
+      if (!('speechSynthesis' in window)) return null;
+      const voices = speechSynthesis.getVoices();
+      const femaleKeywords = ['female', 'woman', 'girl', 'zira', 'samantha', 'karen', 'victoria', 'fiona', 'moira', 'tessa', 'veena', 'google uk english female', 'microsoft zira'];
+      const femaleVoice = voices.find(v =>
+        femaleKeywords.some(k => v.name.toLowerCase().includes(k))
+      );
+      return femaleVoice || voices.find(v => v.lang.startsWith('en')) || null;
+    }
+
+    function playBeepTones() {
+      try {
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = audioContext;
+        const now = ctx.currentTime;
+
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-10, now);
+        compressor.knee.setValueAtTime(0, now);
+        compressor.ratio.setValueAtTime(20, now);
+        compressor.attack.setValueAtTime(0, now);
+        compressor.release.setValueAtTime(0.05, now);
+        compressor.connect(ctx.destination);
+
+        for (let i = 0; i < 5; i++) {
+          const offset = i * 0.6;
+
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = "square";
+          osc1.frequency.value = 587;
+          gain1.gain.setValueAtTime(1.0, now + offset);
+          gain1.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.15);
+          osc1.connect(gain1).connect(compressor);
+          osc1.start(now + offset);
+          osc1.stop(now + offset + 0.15);
+
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = "square";
+          osc2.frequency.value = 880;
+          gain2.gain.setValueAtTime(1.0, now + offset + 0.18);
+          gain2.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.35);
+          osc2.connect(gain2).connect(compressor);
+          osc2.start(now + offset + 0.18);
+          osc2.stop(now + offset + 0.35);
+
+          const osc3 = ctx.createOscillator();
+          const gain3 = ctx.createGain();
+          osc3.type = "square";
+          osc3.frequency.value = 1175;
+          gain3.gain.setValueAtTime(1.0, now + offset + 0.38);
+          gain3.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.55);
+          osc3.connect(gain3).connect(compressor);
+          osc3.start(now + offset + 0.38);
+          osc3.stop(now + offset + 0.55);
+        }
+      } catch(e) {
+        console.error("Audio error:", e);
+      }
+    }
+
+    function speakNewOrder(times) {
+      return new Promise((resolve) => {
+        if (!('speechSynthesis' in window)) { resolve(); return; }
+        let count = 0;
+        function speakOnce() {
+          if (stopped || count >= times) { resolve(); return; }
+          const utterance = new SpeechSynthesisUtterance("New Order for Kravings Kitchen!");
+          utterance.volume = 1.0;
+          utterance.rate = 1.0;
+          utterance.pitch = 1.3;
+          const voice = getFemaleVoice();
+          if (voice) utterance.voice = voice;
+          utterance.onend = () => {
+            count++;
+            statusEl.textContent = `🗣️ "New Order for Kravings Kitchen!" (${count}/${times})`;
+            setTimeout(speakOnce, 400);
+          };
+          utterance.onerror = () => { count++; setTimeout(speakOnce, 400); };
+          speechSynthesis.speak(utterance);
+        }
+        speakOnce();
+      });
+    }
+
+    function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function stopAll() {
+      stopped = true;
+      if ('speechSynthesis' in window) speechSynthesis.cancel();
+      statusEl.textContent = '⏹ Stopped';
+      playBtn.disabled = false;
+      stopBtn.style.display = 'none';
+    }
+
+    // Pattern: [Beep → Voice × 2 → Beep] × 5
+    async function playNotificationSound() {
+      stopped = false;
+      playBtn.disabled = true;
+      stopBtn.style.display = 'inline-block';
+
+      for (let round = 0; round < 2; round++) {
+        if (stopped) break;
+
+        statusEl.textContent = `🔊 Beep (Round ${round + 1}/5)`;
+        playBeepTones();
+        await wait(3200);
+
+        if (stopped) break;
+        statusEl.textContent = `🗣️ Voice announcement (Round ${round + 1}/5)...`;
+        await speakNewOrder(2);
+
+        if (stopped) break;
+        statusEl.textContent = `🔊 Beep end (Round ${round + 1}/5)`;
+        playBeepTones();
+        await wait(3200);
+
+        if (round < 4 && !stopped) {
+          statusEl.textContent = `⏳ Pause before round ${round + 2}...`;
+          await wait(800);
+        }
+      }
+
+      if (!stopped) statusEl.textContent = '✅ Done!';
+      playBtn.disabled = false;
+      stopBtn.style.display = 'none';
+    }
+  </script>
+</body>
+</html>

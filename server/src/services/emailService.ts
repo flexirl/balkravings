@@ -85,37 +85,49 @@ export async function verifyEmailConnection(): Promise<boolean> {
   return zohoOk && brevoOk; 
 }
 
-// ─── Send Welcome Email (ZOHO) ─────────────────────────────
+// ─── Send Welcome Email (BREVO) ─────────────────────────────
 export async function sendWelcomeEmail(name: string, email: string): Promise<boolean> {
+  console.log(`[Email] 📧 Sending welcome email: FROM=${FROM_ADDRESS} TO=${email}`);
   try {
-    await zohoTransporter.sendMail({
+    const info = await brevoTransporter.sendMail({
       from: FROM_ADDRESS,
       to: email,
       subject: `Welcome to Kravings Kitchen, ${name}! 🍔`,
       html: welcomeEmailTemplate(name),
     });
-    console.log(`📧 Welcome email sent (Zoho) to ${email}`);
+    console.log(`[Email] ✅ Welcome email sent to ${email} — messageId: ${info.messageId}`);
     return true;
-  } catch (error) {
-    console.error('Failed to send welcome email:', error);
-    return false;
+  } catch (error: any) {
+    console.error(`[Email] ❌ Welcome email FAILED to ${email}:`, {
+      message: error.message,
+      code: error.code,
+      responseCode: error.responseCode,
+      response: error.response,
+    });
+    throw error; // Re-throw so retry logic can catch it
   }
 }
 
 // ─── Send Order Confirmation Email (BREVO) ──────────────────
 export async function sendOrderConfirmationEmail(order: OrderDetails): Promise<boolean> {
+  console.log(`[Email] 📧 Sending order confirmation: FROM=${FROM_ADDRESS} TO=${order.email} ORDER=${order.orderId}`);
   try {
-    await brevoTransporter.sendMail({
+    const info = await brevoTransporter.sendMail({
       from: FROM_ADDRESS,
       to: order.email,
       subject: `Order Confirmed ✅ #${order.orderId.slice(0, 8).toUpperCase()}`,
       html: orderConfirmationTemplate(order),
     });
-    console.log(`📧 Order confirmation sent (Brevo) to ${order.email}`);
+    console.log(`[Email] ✅ Order confirmation sent to ${order.email} — messageId: ${info.messageId}`);
     return true;
-  } catch (error) {
-    console.error('Failed to send order confirmation email:', error);
-    return false;
+  } catch (error: any) {
+    console.error(`[Email] ❌ Order confirmation FAILED to ${order.email}:`, {
+      message: error.message,
+      code: error.code,
+      responseCode: error.responseCode,
+      response: error.response,
+    });
+    throw error;
   }
 }
 
@@ -125,18 +137,24 @@ export async function sendOrderDeliveredEmail(
   customerName: string,
   orderId: string
 ): Promise<boolean> {
+  console.log(`[Email] 📧 Sending delivery email: FROM=${FROM_ADDRESS} TO=${email} ORDER=${orderId}`);
   try {
-    await brevoTransporter.sendMail({
+    const info = await brevoTransporter.sendMail({
       from: FROM_ADDRESS,
       to: email,
       subject: `Your order has been delivered! 🎉 #${orderId.slice(0, 8).toUpperCase()}`,
       html: orderDeliveredTemplate(customerName, orderId),
     });
-    console.log(`📧 Delivery email sent (Brevo) to ${email}`);
+    console.log(`[Email] ✅ Delivery email sent to ${email} — messageId: ${info.messageId}`);
     return true;
-  } catch (error) {
-    console.error('Failed to send delivery email:', error);
-    return false;
+  } catch (error: any) {
+    console.error(`[Email] ❌ Delivery email FAILED to ${email}:`, {
+      message: error.message,
+      code: error.code,
+      responseCode: error.responseCode,
+      response: error.response,
+    });
+    throw error;
   }
 }
 

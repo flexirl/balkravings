@@ -24,10 +24,34 @@ function addToSet(set: Set<string>, id: string) {
   set.add(id);
 }
 
+// ─── Retry helper ──────────────────────────────────────────
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = 3
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const msg = (error as Error).message || String(error);
+      console.error(`[OrderEmail] ⚠️ ${label} — attempt ${attempt}/${maxAttempts} failed: ${msg}`);
+      if (attempt === maxAttempts) throw error;
+      // Exponential backoff: 2s, 4s
+      const delay = Math.pow(2, attempt) * 1000;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('Unreachable');
+}
+
 // ─── Send order confirmation email ─────────────────────────
 async function handleNewOrder(orderId: string) {
-  if (sentConfirmations.has(orderId)) return;
-  addToSet(sentConfirmations, orderId);
+  // Check duplicate BEFORE processing, but don't add to set yet
+  if (sentConfirmations.has(orderId)) {
+    console.log(`[OrderEmail] Skipping duplicate confirmation for ${orderId}`);
+    return;
+  }
 
   try {
     // Fetch order with items
@@ -38,7 +62,7 @@ async function handleNewOrder(orderId: string) {
       .single();
 
     if (orderError || !order) {
-      console.error(`[OrderEmail] Order ${orderId} not found:`, orderError?.message);
+      console.error(`[OrderEmail] ❌ Order ${orderId} not found:`, orderError?.message);
       return;
     }
 
@@ -47,39 +71,48 @@ async function handleNewOrder(orderId: string) {
     const email = authUser?.email;
 
     if (!email) {
-      console.error(`[OrderEmail] No email found for user ${order.user_id}`);
+      console.error(`[OrderEmail] ❌ No email found for user ${order.user_id}`);
       return;
     }
 
-    const success = await sendOrderConfirmationEmail({
-      orderId: order.id,
-      customerName: order.customer_name,
-      email,
-      items: (order.order_items || []).map((item: any) => ({
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-      })),
-      totalAmount: order.total_amount,
-      deliveryAddress: order.delivery_address,
-      paymentMethod: order.payment_method,
-      freebieItem: order.freebie_item || undefined,
-    });
+    console.log(`[OrderEmail] 📧 Sending confirmation email for order ${orderId} to ${email}...`);
+
+    const success = await withRetry(
+      () => sendOrderConfirmationEmail({
+        orderId: order.id,
+        customerName: order.customer_name,
+        email,
+        items: (order.order_items || []).map((item: any) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        totalAmount: order.total_amount,
+        deliveryAddress: order.delivery_address,
+        paymentMethod: order.payment_method,
+        freebieItem: order.freebie_item || undefined,
+      }),
+      `Confirmation email for order ${orderId}`
+    );
 
     if (success) {
-      console.log(`[OrderEmail] ✅ Confirmation email sent for order ${orderId}`);
+      // Only mark as sent AFTER successful send
+      addToSet(sentConfirmations, orderId);
+      console.log(`[OrderEmail] ✅ Confirmation email sent for order ${orderId} to ${email}`);
     } else {
-      console.error(`[OrderEmail] ❌ Failed to send confirmation email for order ${orderId}`);
+      console.error(`[OrderEmail] ❌ sendOrderConfirmationEmail returned false for order ${orderId}`);
     }
   } catch (error) {
-    console.error(`[OrderEmail] Error sending confirmation email for order ${orderId}:`, error);
+    console.error(`[OrderEmail] ❌ All retries failed for confirmation email, order ${orderId}:`, (error as Error).message);
   }
 }
 
 // ─── Send delivery email ───────────────────────────────────
 async function handleOrderDelivered(orderId: string) {
-  if (sentDeliveries.has(orderId)) return;
-  addToSet(sentDeliveries, orderId);
+  if (sentDeliveries.has(orderId)) {
+    console.log(`[OrderEmail] Skipping duplicate delivery email for ${orderId}`);
+    return;
+  }
 
   try {
     // Fetch order
@@ -90,7 +123,7 @@ async function handleOrderDelivered(orderId: string) {
       .single();
 
     if (orderError || !order) {
-      console.error(`[OrderEmail] Order ${orderId} not found:`, orderError?.message);
+      console.error(`[OrderEmail] ❌ Order ${orderId} not found:`, orderError?.message);
       return;
     }
 
@@ -99,62 +132,97 @@ async function handleOrderDelivered(orderId: string) {
     const email = authUser?.email;
 
     if (!email) {
-      console.error(`[OrderEmail] No email found for user ${order.user_id}`);
+      console.error(`[OrderEmail] ❌ No email found for user ${order.user_id}`);
       return;
     }
 
-    const success = await sendOrderDeliveredEmail(email, order.customer_name, order.id);
+    console.log(`[OrderEmail] 📧 Sending delivery email for order ${orderId} to ${email}...`);
+
+    const success = await withRetry(
+      () => sendOrderDeliveredEmail(email, order.customer_name, order.id),
+      `Delivery email for order ${orderId}`
+    );
 
     if (success) {
-      console.log(`[OrderEmail] ✅ Delivery email sent for order ${orderId}`);
+      addToSet(sentDeliveries, orderId);
+      console.log(`[OrderEmail] ✅ Delivery email sent for order ${orderId} to ${email}`);
     } else {
-      console.error(`[OrderEmail] ❌ Failed to send delivery email for order ${orderId}`);
+      console.error(`[OrderEmail] ❌ sendOrderDeliveredEmail returned false for order ${orderId}`);
     }
   } catch (error) {
-    console.error(`[OrderEmail] Error sending delivery email for order ${orderId}:`, error);
+    console.error(`[OrderEmail] ❌ All retries failed for delivery email, order ${orderId}:`, (error as Error).message);
   }
 }
 
-// ─── Start Realtime Listener ──────────────────────────────
+// ─── Start Realtime Listener with Auto-Reconnect ──────────
 export function startOrderEmailListener() {
   console.log('[OrderEmail] 🔔 Starting order email listener...');
 
-  const channel = supabaseAdmin
-    .channel('order-email-events')
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'orders' },
-      (payload) => {
-        const orderId = payload.new?.id;
-        if (orderId) {
-          console.log(`[OrderEmail] New order detected: ${orderId}`);
-          // Small delay to ensure order_items are inserted
-          setTimeout(() => handleNewOrder(orderId), 2000);
-        }
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'orders' },
-      (payload) => {
-        const orderId = payload.new?.id;
-        const newStatus = payload.new?.order_status;
-        const oldStatus = payload.old?.order_status;
+  let reconnectAttempts = 0;
+  const MAX_RECONNECT_ATTEMPTS = 10;
 
-        // Only send delivery email when status changes TO 'delivered'
-        if (orderId && newStatus === 'delivered' && oldStatus !== 'delivered') {
-          console.log(`[OrderEmail] Order ${orderId} marked as delivered`);
-          handleOrderDelivered(orderId);
+  function subscribe() {
+    const channel = supabaseAdmin
+      .channel('order-email-events')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'orders' },
+        (payload) => {
+          const orderId = payload.new?.id;
+          if (orderId) {
+            console.log(`[OrderEmail] 🆕 New order detected: ${orderId}`);
+            // Small delay to ensure order_items are inserted
+            setTimeout(() => handleNewOrder(orderId), 3000);
+          }
         }
-      }
-    )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('[OrderEmail] ✅ Listening for order events (emails will fire automatically)');
-      } else if (status === 'CHANNEL_ERROR') {
-        console.error('[OrderEmail] ❌ Channel error — will retry...');
-      }
-    });
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders' },
+        (payload) => {
+          const orderId = payload.new?.id;
+          const newStatus = payload.new?.order_status;
+          const oldStatus = payload.old?.order_status;
 
-  return channel;
+          // Only send delivery email when status changes TO 'delivered'
+          if (orderId && newStatus === 'delivered' && oldStatus !== 'delivered') {
+            console.log(`[OrderEmail] 🚚 Order ${orderId} marked as delivered`);
+            handleOrderDelivered(orderId);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          reconnectAttempts = 0; // Reset on successful connection
+          console.log('[OrderEmail] ✅ Listening for order events (emails will fire automatically)');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[OrderEmail] ❌ Channel error — attempting reconnect...');
+          // Auto-reconnect with exponential backoff
+          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            const delay = Math.min(Math.pow(2, reconnectAttempts) * 1000, 30000);
+            console.log(`[OrderEmail] 🔄 Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay / 1000}s...`);
+            setTimeout(() => {
+              supabaseAdmin.removeChannel(channel);
+              subscribe();
+            }, delay);
+          } else {
+            console.error('[OrderEmail] ❌ Max reconnect attempts reached. Email listener is DOWN.');
+          }
+        } else if (status === 'CLOSED') {
+          console.warn('[OrderEmail] ⚠️ Channel closed — attempting reconnect...');
+          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            const delay = Math.min(Math.pow(2, reconnectAttempts) * 1000, 30000);
+            setTimeout(() => {
+              subscribe();
+            }, delay);
+          }
+        }
+      });
+
+    return channel;
+  }
+
+  return subscribe();
 }

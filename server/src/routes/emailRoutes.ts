@@ -14,8 +14,230 @@ import {
 
 const router = express.Router();
 
+// ─── Helpers ──────────────────────────────────────────────
+
+// Build a userId → email map from auth.users
+async function getUserEmailMap(): Promise<Map<string, string>> {
+  const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+  return new Map(
+    users
+      .filter((u): u is typeof u & { email: string } => !!u.email)
+      .map(u => [u.id, u.email] as [string, string])
+  );
+}
+
+// Convert profiles + email map to recipients array
+function toRecipients(
+  profiles: { id: string; name: string | null }[],
+  emailMap: Map<string, string>
+): { email: string; name: string }[] {
+  const recipients: { email: string; name: string }[] = [];
+  for (const p of profiles) {
+    const email = emailMap.get(p.id);
+    if (email) recipients.push({ email, name: p.name || email.split('@')[0] });
+  }
+  return recipients;
+}
+
+// ─── Segment Definitions ──────────────────────────────────
+
+interface Segment {
+  key: string;
+  label: string;
+  icon: string;
+  description: string;
+}
+
+const SEGMENT_DEFS: Segment[] = [
+  { key: 'all',        label: 'All Customers',   icon: '👥', description: 'Every registered customer' },
+  { key: 'top_orders', label: 'Top Orderers',     icon: '🏆', description: 'Top 50 by order count' },
+  { key: 'big_spend',  label: 'Big Spenders',     icon: '💰', description: 'Top 50 by total spend' },
+  { key: 'veg',        label: 'Veg Lovers',       icon: '🥬', description: 'Mostly order veg items' },
+  { key: 'nonveg',     label: 'Non-Veg Lovers',   icon: '🍗', description: 'Mostly order non-veg items' },
+  { key: 'new_users',  label: 'New Users',        icon: '🆕', description: 'Signed up in last 14 days' },
+  { key: 'inactive',   label: 'Inactive Users',   icon: '😴', description: 'No order in 30+ days' },
+];
+
+// Compute recipients for a specific segment
+async function getSegmentRecipients(
+  segmentKey: string,
+  emailMap: Map<string, string>
+): Promise<{ email: string; name: string }[]> {
+  const LIMIT = 50;
+
+  switch (segmentKey) {
+    case 'all': {
+      const { data } = await supabaseAdmin.from('profiles').select('id, name').eq('role', 'user');
+      return toRecipients(data || [], emailMap);
+    }
+
+    case 'top_orders': {
+      // Users with most orders, top 50
+      const { data: orders } = await supabaseAdmin
+        .from('orders')
+        .select('user_id');
+
+      if (!orders || orders.length === 0) return [];
+
+      // Count orders per user
+      const counts = new Map<string, number>();
+      for (const o of orders) {
+        counts.set(o.user_id, (counts.get(o.user_id) || 0) + 1);
+      }
+
+      // Sort by count descending, take top 50
+      const topUserIds = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, LIMIT)
+        .map(([uid]) => uid);
+
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name')
+        .in('id', topUserIds);
+
+      return toRecipients(profiles || [], emailMap);
+    }
+
+    case 'big_spend': {
+      // Users with highest total spend, top 50
+      const { data: orders } = await supabaseAdmin
+        .from('orders')
+        .select('user_id, total_amount');
+
+      if (!orders || orders.length === 0) return [];
+
+      const totals = new Map<string, number>();
+      for (const o of orders) {
+        totals.set(o.user_id, (totals.get(o.user_id) || 0) + Number(o.total_amount));
+      }
+
+      const topUserIds = [...totals.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, LIMIT)
+        .map(([uid]) => uid);
+
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name')
+        .in('id', topUserIds);
+
+      return toRecipients(profiles || [], emailMap);
+    }
+
+    case 'veg':
+    case 'nonveg': {
+      const isVegSegment = segmentKey === 'veg';
+
+      // Get all order items with food veg classification
+      const { data: orderItems } = await supabaseAdmin
+        .from('order_items')
+        .select('order_id, food_id');
+
+      const { data: foods } = await supabaseAdmin
+        .from('foods')
+        .select('id, is_veg');
+
+      const { data: orders } = await supabaseAdmin
+        .from('orders')
+        .select('id, user_id');
+
+      if (!orderItems || !foods || !orders) return [];
+
+      // Food veg map
+      const foodVegMap = new Map(foods.map(f => [f.id, f.is_veg !== false]));
+      // Order → user map
+      const orderUserMap = new Map(orders.map(o => [o.id, o.user_id]));
+
+      // Count veg vs total items per user
+      const userStats = new Map<string, { veg: number; total: number }>();
+      for (const item of orderItems) {
+        const userId = orderUserMap.get(item.order_id);
+        if (!userId) continue;
+        const isVeg = foodVegMap.get(item.food_id) ?? true;
+        const stats = userStats.get(userId) || { veg: 0, total: 0 };
+        stats.total++;
+        if (isVeg) stats.veg++;
+        userStats.set(userId, stats);
+      }
+
+      // Filter: >60% veg or >60% non-veg
+      const qualifiedUserIds = [...userStats.entries()]
+        .filter(([, s]) => {
+          if (s.total === 0) return false;
+          const vegRatio = s.veg / s.total;
+          return isVegSegment ? vegRatio > 0.6 : vegRatio < 0.4;
+        })
+        .slice(0, LIMIT)
+        .map(([uid]) => uid);
+
+      if (qualifiedUserIds.length === 0) return [];
+
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name')
+        .in('id', qualifiedUserIds);
+
+      return toRecipients(profiles || [], emailMap);
+    }
+
+    case 'new_users': {
+      // Users who signed up in last 14 days
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name, created_at')
+        .eq('role', 'user')
+        .gte('created_at', fourteenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(LIMIT);
+
+      return toRecipients(profiles || [], emailMap);
+    }
+
+    case 'inactive': {
+      // Users who have ordered before but not in last 30 days
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      // Get ALL users who have ever ordered
+      const { data: allOrders } = await supabaseAdmin
+        .from('orders')
+        .select('user_id, created_at');
+
+      if (!allOrders || allOrders.length === 0) return [];
+
+      // Find users whose LATEST order is older than 30 days
+      const latestOrder = new Map<string, string>();
+      for (const o of allOrders) {
+        const prev = latestOrder.get(o.user_id);
+        if (!prev || o.created_at > prev) {
+          latestOrder.set(o.user_id, o.created_at);
+        }
+      }
+
+      const inactiveUserIds = [...latestOrder.entries()]
+        .filter(([, lastDate]) => lastDate < thirtyDaysAgo)
+        .slice(0, LIMIT)
+        .map(([uid]) => uid);
+
+      if (inactiveUserIds.length === 0) return [];
+
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name')
+        .in('id', inactiveUserIds);
+
+      return toRecipients(profiles || [], emailMap);
+    }
+
+    default:
+      return [];
+  }
+}
+
+
 // ─── POST /api/email/welcome ───────────────────────────────
-// Triggered after user signup — sends welcome email
 router.post('/welcome', async (req, res) => {
   try {
     const { name, email } = req.body;
@@ -33,7 +255,6 @@ router.post('/welcome', async (req, res) => {
 });
 
 // ─── POST /api/email/order-confirmation ────────────────────
-// Triggered after order placement — sends order details
 router.post('/order-confirmation', protect as any, async (req: AuthRequest, res) => {
   console.log('[EmailRoute] 📨 /order-confirmation hit — orderId:', req.body?.orderId, 'user:', req.user?.email);
   try {
@@ -43,7 +264,6 @@ router.post('/order-confirmation', protect as any, async (req: AuthRequest, res)
       return res.status(400).json({ message: 'Order ID is required' });
     }
 
-    // Fetch order with items from Supabase
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select('*, order_items(*)')
@@ -54,7 +274,6 @@ router.post('/order-confirmation', protect as any, async (req: AuthRequest, res)
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Get user email
     const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(order.user_id);
     const email = authUser?.email;
 
@@ -85,7 +304,6 @@ router.post('/order-confirmation', protect as any, async (req: AuthRequest, res)
 });
 
 // ─── POST /api/email/order-delivered ───────────────────────
-// Triggered by admin when order status → delivered
 router.post('/order-delivered', protect as any, admin as any, async (req: AuthRequest, res) => {
   console.log('[EmailRoute] 📨 /order-delivered hit — orderId:', req.body?.orderId, 'user:', req.user?.email);
   try {
@@ -95,7 +313,6 @@ router.post('/order-delivered', protect as any, admin as any, async (req: AuthRe
       return res.status(400).json({ message: 'Order ID is required' });
     }
 
-    // Fetch order
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select('id, customer_name, user_id')
@@ -106,7 +323,6 @@ router.post('/order-delivered', protect as any, admin as any, async (req: AuthRe
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Get user email
     const { data: { user: authUser } } = await supabaseAdmin.auth.admin.getUserById(order.user_id);
     const email = authUser?.email;
 
@@ -123,10 +339,8 @@ router.post('/order-delivered', protect as any, admin as any, async (req: AuthRe
 });
 
 // ─── GET /api/email/customers ──────────────────────────────
-// Admin only — get all customer emails for bulk send
 router.get('/customers', protect as any, admin as any, async (req: AuthRequest, res) => {
   try {
-    // Fetch all user profiles with their emails from auth
     const { data: profiles, error } = await supabaseAdmin
       .from('profiles')
       .select('id, name')
@@ -134,22 +348,8 @@ router.get('/customers', protect as any, admin as any, async (req: AuthRequest, 
 
     if (error) throw error;
 
-    // Get emails from auth.users for each profile
-    const customers: { email: string; name: string }[] = [];
-
-    if (profiles) {
-      // Batch fetch — get all users from auth admin
-      const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-
-      const userMap = new Map(users.map(u => [u.id, u.email]));
-
-      for (const profile of profiles) {
-        const email = userMap.get(profile.id);
-        if (email) {
-          customers.push({ email, name: profile.name || email.split('@')[0] });
-        }
-      }
-    }
+    const emailMap = await getUserEmailMap();
+    const customers = toRecipients(profiles || [], emailMap);
 
     res.json({ customers, total: customers.length });
   } catch (error) {
@@ -158,43 +358,47 @@ router.get('/customers', protect as any, admin as any, async (req: AuthRequest, 
   }
 });
 
+// ─── GET /api/email/segments ──────────────────────────────
+// Returns all segment definitions with live recipient counts
+router.get('/segments', protect as any, admin as any, async (req: AuthRequest, res) => {
+  try {
+    const emailMap = await getUserEmailMap();
+
+    const segmentsWithCounts = await Promise.all(
+      SEGMENT_DEFS.map(async (seg) => {
+        const recipients = await getSegmentRecipients(seg.key, emailMap);
+        return { ...seg, count: recipients.length };
+      })
+    );
+
+    res.json({ segments: segmentsWithCounts });
+  } catch (error) {
+    console.error('Fetch segments error:', error);
+    res.status(500).json({ message: 'Failed to fetch segments' });
+  }
+});
+
 // ─── POST /api/email/bulk ──────────────────────────────────
-// Admin only — send bulk marketing email to all customers
+// Admin only — send bulk marketing email (optionally to a specific segment)
 router.post('/bulk', protect as any, admin as any, async (req: AuthRequest, res) => {
   try {
-    const { subject, body, imageUrl } = req.body;
+    const { subject, body, imageUrl, segment } = req.body;
 
     if (!subject || !body) {
       return res.status(400).json({ message: 'Subject and body are required' });
     }
 
-    // Fetch all customer emails
-    const { data: profiles } = await supabaseAdmin
-      .from('profiles')
-      .select('id, name')
-      .eq('role', 'user');
+    const emailMap = await getUserEmailMap();
+    const segmentKey = segment || 'all';
 
-    if (!profiles || profiles.length === 0) {
-      return res.status(400).json({ message: 'No customers found' });
-    }
-
-    // Get emails from auth
-    const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-    const userMap = new Map(users.map(u => [u.id, u.email]));
-
-    const recipients: { email: string; name: string }[] = [];
-    for (const profile of profiles) {
-      const email = userMap.get(profile.id);
-      if (email) {
-        recipients.push({ email, name: profile.name || email.split('@')[0] });
-      }
-    }
+    const recipients = await getSegmentRecipients(segmentKey, emailMap);
 
     if (recipients.length === 0) {
-      return res.status(400).json({ message: 'No valid email addresses found' });
+      return res.status(400).json({ message: 'No recipients found for this segment' });
     }
 
-    // Send bulk email (this runs in background, respond immediately with started status)
+    console.log(`[BulkEmail] Sending to segment "${segmentKey}" — ${recipients.length} recipients`);
+
     const result = await sendBulkEmail(subject, body, recipients, imageUrl);
 
     res.json({

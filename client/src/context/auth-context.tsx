@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { useRouter } from "next/navigation"
 import { Session, User as SupabaseUser } from "@supabase/supabase-js"
 import supabase from "@/lib/supabase"
+import api from "@/lib/api"
 
 export interface Address {
   id: string
@@ -95,12 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profileCache.current.set(supabaseUser.id, result)
 
         // Fire-and-forget: Send welcome email for new users (including Google OAuth)
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-        fetch(`${apiUrl}/email/welcome`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: result.name, email: result.email }),
-        }).catch(() => {}) // silently ignore email failures
+        api.post('/email/welcome', { name: result.name, email: result.email })
+          .catch((err) => console.warn('[Welcome Email] Failed:', err.message))
 
         return result
       }
@@ -199,12 +196,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // onAuthStateChange will handle setting the user via fetchOrCreateProfile
 
       // Fire-and-forget: Send welcome email (non-blocking)
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-      fetch(`${apiUrl}/email/welcome`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email }),
-      }).catch(() => {}) // silently ignore email failures
+      api.post('/email/welcome', { name, email })
+        .catch((err) => console.warn('[Welcome Email] Failed:', err.message))
     }
 
     return {}

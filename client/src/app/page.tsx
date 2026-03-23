@@ -8,13 +8,14 @@ const BestSellersSection = dynamic(() => import("@/components/landing/best-selle
 const OffersSection = dynamic(() => import("@/components/landing/offers-section").then(m => ({ default: m.OffersSection })))
 const TestimonialsSection = dynamic(() => import("@/components/landing/testimonials-section").then(m => ({ default: m.TestimonialsSection })))
 const CtaSection = dynamic(() => import("@/components/landing/cta-section").then(m => ({ default: m.CtaSection })))
+
 const AboutUs = dynamic(() => import("@/components/landing/about").then(m => ({ default: m.AboutUs })))
 
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Restaurant",
   name: "Kravings Kitchen by ARF",
-  alternateName: ["Kravings by ARF", "Addis Royal Food Cloud Kitchen", "Kravings Kitchen"],
+  alternateName: ["Kravings by ARF", "Addis Royal Food Cloud Kitchen", "Kravings Kitchen", "kitis kitchen", "kiits kitchen", "KIIT's Kitchen", "kiti's kitchen"],
   description:
     "Premium cloud kitchen delivering fresh, affordable meals across KIIT, Patia, Chandrasekharpur & nearby areas in Bhubaneswar. Biryanis, combos, parathas & more delivered in 20 minutes. Open till 1 AM.",
   url: "https://www.kravingskitchen.in",
@@ -84,6 +85,93 @@ const jsonLd = {
   },
 };
 
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Is Kravings Kitchen the same as kitis kitchen?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Yes! KIIT students fondly call Kravings Kitchen as 'kitis kitchen' or 'kiits kitchen'. Kravings Kitchen by ARF is KIIT's favourite kitchen for biryanis, combos, parathas and late-night food delivery in Patia, Bhubaneswar.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Where is kitis kitchen located?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Kitis kitchen (Kravings Kitchen by ARF) is located near Royal Enfield Showroom, KIIT Road, Patia, Bhubaneswar, Odisha 751024. We deliver across KIIT, Patia, Chandrasekharpur and nearby areas.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What are kitis kitchen timings?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Kitis kitchen (Kravings Kitchen) is open daily from 12:00 PM to 2:00 AM. We specialize in late-night food delivery for KIIT students and nearby residents.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What food does kitis kitchen serve?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Kitis kitchen (Kravings Kitchen by ARF) serves biryanis, fried rice combos, parathas, North Indian dishes, Indo-Chinese favorites, and affordable student combos. All meals are freshly prepared and delivered in 20 minutes.",
+      },
+    },
+  ],
+};
+
+const siteLinksJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Kravings Kitchen by ARF",
+  alternateName: ["kitis kitchen", "kiits kitchen", "Kravings Kitchen"],
+  url: "https://www.kravingskitchen.in",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: "https://www.kravingskitchen.in/menu?q={search_term_string}",
+    "query-input": "required name=search_term_string",
+  },
+};
+
+const siteNavJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  itemListElement: [
+    {
+      "@type": "SiteNavigationElement",
+      position: 1,
+      name: "Menu",
+      description: "Browse our full menu — biryanis, combos, parathas & more",
+      url: "https://www.kravingskitchen.in/menu",
+    },
+    {
+      "@type": "SiteNavigationElement",
+      position: 2,
+      name: "Login",
+      description: "Sign in to your Kravings Kitchen account",
+      url: "https://www.kravingskitchen.in/login",
+    },
+    {
+      "@type": "SiteNavigationElement",
+      position: 3,
+      name: "Register",
+      description: "Create your Kravings Kitchen account to order food",
+      url: "https://www.kravingskitchen.in/register",
+    },
+    {
+      "@type": "SiteNavigationElement",
+      position: 4,
+      name: "Track Order",
+      description: "Track your food delivery order in real-time",
+      url: "https://www.kravingskitchen.in/orders",
+    },
+  ],
+};
+
 export default function Home() {
   return (
     <div className="overflow-x-hidden w-full flex flex-col">
@@ -91,6 +179,21 @@ export default function Home() {
         id="restaurant-jsonld"
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <Script
+        id="faq-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+      <Script
+        id="sitelinks-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(siteLinksJsonLd) }}
+      />
+      <Script
+        id="sitenav-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(siteNavJsonLd) }}
       />
       <HeroSection />
       <PromoBanner />
