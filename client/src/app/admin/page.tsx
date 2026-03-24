@@ -1003,6 +1003,57 @@ export default function AdminDashboard() {
                 )
               })()}
 
+              {/* ── All-Time Stats ── */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { title: "Total Revenue", value: `₹${stats.totalRevenue.toLocaleString()}`, icon: IndianRupee, color: "text-green-400" },
+                  { title: "Orders", value: stats.totalOrders.toString(), icon: Package, color: "text-blue-400" },
+                  { title: "Food Items", value: stats.totalFoods.toString(), icon: UtensilsCrossed, color: "text-primary" },
+                  { title: "Total Users", value: stats.totalUsers.toString(), icon: Users, color: "text-purple-400" },
+                ].map((stat) => (
+                  <Card key={stat.title} className="bg-card border-border">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
+                      <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center">
+                        <stat.icon className={`h-4 w-4 ${stat.color}`} />
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Recent Orders */}
+              <Card className="bg-card border-border">
+                <CardHeader>
+                  <CardTitle>Recent Orders</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {stats.recentOrders.length === 0 ? (
+                    <p className="text-muted-foreground text-sm text-center py-8">No orders yet</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {stats.recentOrders.slice(0, 5).map((order) => (
+                        <div key={order.id} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
+                          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
+                            {(order.customer_name || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{order.customer_name || "Customer"}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(order.order_items || []).length} items · {order.payment_method === "cod" ? "COD" : "Online"} · {order.order_status}
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-green-400">₹{Number(order.total_amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* ── Calendar & Daily View ── */}
               <Card className="bg-card border-border">
                 <CardHeader className="pb-3">
@@ -1164,57 +1215,6 @@ export default function AdminDashboard() {
                       </div>
                     )
                   })()}
-                </CardContent>
-              </Card>
-
-              {/* ── All-Time Stats ── */}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {[
-                  { title: "Total Revenue", value: `₹${stats.totalRevenue.toLocaleString()}`, icon: IndianRupee, color: "text-green-400" },
-                  { title: "Orders", value: stats.totalOrders.toString(), icon: Package, color: "text-blue-400" },
-                  { title: "Food Items", value: stats.totalFoods.toString(), icon: UtensilsCrossed, color: "text-primary" },
-                  { title: "Total Users", value: stats.totalUsers.toString(), icon: Users, color: "text-purple-400" },
-                ].map((stat) => (
-                  <Card key={stat.title} className="bg-card border-border">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-                      <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center">
-                        <stat.icon className={`h-4 w-4 ${stat.color}`} />
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{stat.value}</div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              {/* Recent Orders */}
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <CardTitle>Recent Orders</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {stats.recentOrders.length === 0 ? (
-                    <p className="text-muted-foreground text-sm text-center py-8">No orders yet</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {stats.recentOrders.slice(0, 5).map((order) => (
-                        <div key={order.id} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
-                          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-                            {(order.customer_name || "?").charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{order.customer_name || "Customer"}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {(order.order_items || []).length} items · {order.payment_method === "cod" ? "COD" : "Online"} · {order.order_status}
-                            </p>
-                          </div>
-                          <span className="text-sm font-semibold text-green-400">₹{Number(order.total_amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             </>
@@ -2529,7 +2529,8 @@ function EmailsTab() {
       .then(res => {
         setSegments(res.data.segments || [])
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('[Segments] Failed to fetch segments:', err?.response?.data || err?.message || err)
         // Fallback: just show "all" with unknown count
         setSegments([{ key: 'all', label: 'All Customers', icon: '👥', description: 'Everyone', count: 0 }])
       })

@@ -16,14 +16,32 @@ const router = express.Router();
 
 // ─── Helpers ──────────────────────────────────────────────
 
-// Build a userId → email map from auth.users
+// Build a userId → email map from auth.users (with pagination)
 async function getUserEmailMap(): Promise<Map<string, string>> {
-  const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-  return new Map(
-    users
-      .filter((u): u is typeof u & { email: string } => !!u.email)
-      .map(u => [u.id, u.email] as [string, string])
-  );
+  const map = new Map<string, string>();
+  let page = 1;
+  const perPage = 1000;
+
+  // Paginate through all users
+  while (true) {
+    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+
+    if (error) {
+      console.error('[getUserEmailMap] listUsers error on page', page, ':', error.message);
+      break;
+    }
+
+    for (const u of users) {
+      if (u.email) map.set(u.id, u.email);
+    }
+
+    // If we got fewer than perPage, we've reached the end
+    if (users.length < perPage) break;
+    page++;
+  }
+
+  console.log(`[getUserEmailMap] Loaded ${map.size} user emails`);
+  return map;
 }
 
 // Convert profiles + email map to recipients array
@@ -362,19 +380,27 @@ router.get('/customers', protect as any, admin as any, async (req: AuthRequest, 
 // Returns all segment definitions with live recipient counts
 router.get('/segments', protect as any, admin as any, async (req: AuthRequest, res) => {
   try {
+    console.log('[Segments] Fetching email map...');
     const emailMap = await getUserEmailMap();
+    console.log('[Segments] Email map loaded, computing segment counts...');
 
     const segmentsWithCounts = await Promise.all(
       SEGMENT_DEFS.map(async (seg) => {
-        const recipients = await getSegmentRecipients(seg.key, emailMap);
-        return { ...seg, count: recipients.length };
+        try {
+          const recipients = await getSegmentRecipients(seg.key, emailMap);
+          return { ...seg, count: recipients.length };
+        } catch (segErr) {
+          console.error(`[Segments] Error computing segment "${seg.key}":`, segErr);
+          return { ...seg, count: 0 };
+        }
       })
     );
 
+    console.log('[Segments] Done. Counts:', segmentsWithCounts.map(s => `${s.key}:${s.count}`).join(', '));
     res.json({ segments: segmentsWithCounts });
-  } catch (error) {
-    console.error('Fetch segments error:', error);
-    res.status(500).json({ message: 'Failed to fetch segments' });
+  } catch (error: any) {
+    console.error('[Segments] FATAL error:', error?.message || error, error?.stack);
+    res.status(500).json({ message: 'Failed to fetch segments', error: error?.message });
   }
 });
 
