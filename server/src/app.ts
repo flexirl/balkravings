@@ -40,11 +40,16 @@ app.use('/api/upload', uploadRoutes);
 import emailRoutes from './routes/emailRoutes';
 app.use('/api/email', emailRoutes);
 
-// Verify email SMTP connection on startup, then start order email listener
+// Non-blocking: Initialize email services in background (don't delay server startup)
 import { verifyEmailConnection } from './services/emailService';
 import { startOrderEmailListener } from './services/orderEmailListener';
-verifyEmailConnection().then(() => {
-  startOrderEmailListener();
+setImmediate(async () => {
+  try {
+    await verifyEmailConnection();
+    startOrderEmailListener();
+  } catch (err) {
+    console.error('[Startup] Email service init failed (non-critical):', err);
+  }
 });
 
 // Health check
