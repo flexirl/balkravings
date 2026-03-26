@@ -34,11 +34,11 @@ export default function AuthCallbackPage() {
             }
           )
 
-          // Timeout fallback — if no session after 5s, redirect to login
+          // Timeout fallback — if no session after 30s, redirect to login
           setTimeout(() => {
             subscription.unsubscribe()
             router.push("/login?error=auth_timeout")
-          }, 5000)
+          }, 30000)
         }
       } catch {
         router.push("/login?error=auth_failed")
@@ -51,7 +51,7 @@ export default function AuthCallbackPage() {
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      <p className="text-muted-foreground text-sm">Signing you in...</p>
+      <p className="text-muted-foreground text-sm">Signing you in... This may take a moment.</p>
     </div>
   )
 }
