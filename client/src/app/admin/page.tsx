@@ -2589,8 +2589,9 @@ function EmailsTab() {
       })
       setLastResult(data.result)
       toast.success(data.message)
-    } catch {
-      toast.error('Failed to send bulk email')
+    } catch (err: any) {
+      console.error('[BulkEmail] Failed:', err?.response?.data || err?.message || err)
+      toast.error(err?.response?.data?.message || 'Failed to send bulk email')
     } finally {
       setSending(false)
     }

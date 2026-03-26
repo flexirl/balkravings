@@ -31,6 +31,7 @@ export default function MenuClient({ initialFoods }: { initialFoods: Food[] }) {
   const { items, totalAmount } = useCart()
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
+  const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all")
   const [bestsellerNames, setBestsellerNames] = useState<Set<string>>(new Set())
   const pathname = usePathname()
 
@@ -111,7 +112,13 @@ export default function MenuClient({ initialFoods }: { initialFoods: Food[] }) {
         : selectedCategory === "🔥 Bestsellers"
         ? bestsellerNames.has(food.name.toLowerCase())
         : food.category.trim().toLowerCase() === selectedCategory.trim().toLowerCase()
-    return matchesSearch && matchesCategory
+    const matchesVeg =
+      vegFilter === "all"
+        ? true
+        : vegFilter === "veg"
+        ? food.is_veg !== false
+        : food.is_veg === false
+    return matchesSearch && matchesCategory && matchesVeg
   })
 
   const refreshFoods = useCallback(async () => {
@@ -155,18 +162,43 @@ export default function MenuClient({ initialFoods }: { initialFoods: Food[] }) {
       {/* Sticky Search + Filters */}
       <div className="border-b border-border bg-card/80 backdrop-blur-md sticky top-16 z-30">
         <div className="container mx-auto px-4 md:px-6 py-3">
-          <div className="relative w-full">
-            <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search dishes..."
-              className="pl-10 h-10 rounded-xl bg-secondary border-border focus:border-primary/50 focus:ring-primary/20"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          {/* Search + Veg/Non-Veg in one row */}
+          <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="Search dishes..."
+                className="pl-10 h-10 rounded-xl bg-secondary border-border focus:border-primary/50 focus:ring-primary/20"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={() => setVegFilter(vegFilter === "veg" ? "all" : "veg")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 border whitespace-nowrap ${
+                vegFilter === "veg"
+                  ? "bg-green-500/10 border-green-500 text-green-600 dark:text-green-400"
+                  : "bg-secondary border-border text-muted-foreground hover:border-green-500/40"
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
+              Veg
+            </button>
+            <button
+              onClick={() => setVegFilter(vegFilter === "nonveg" ? "all" : "nonveg")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 border whitespace-nowrap ${
+                vegFilter === "nonveg"
+                  ? "bg-red-500/10 border-red-500 text-red-600 dark:text-red-400"
+                  : "bg-secondary border-border text-muted-foreground hover:border-red-500/40"
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
+              Non-Veg
+            </button>
           </div>
 
           {/* Category Tabs */}
-          <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+          <div className="flex gap-2 mt-2.5 overflow-x-auto pb-1 scrollbar-hide">
             {categories.map((category) => (
                 <button
                   key={category}
