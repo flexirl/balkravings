@@ -19,11 +19,12 @@ export default function CartPage() {
   const [unavailableItems, setUnavailableItems] = useState<string[]>([])
   
   // Dynamic Fees
-  const [deliveryFeeBase, setDeliveryFeeBase] = useState(40)
+  const [deliveryFeeBase, setDeliveryFeeBase] = useState(0)
   const [customChargeLabel, setCustomChargeLabel] = useState<string | null>(null)
   const [customChargeType, setCustomChargeType] = useState<'flat' | 'percent'>('flat')
   const [customChargeValue, setCustomChargeValue] = useState(0)
   const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(0)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   useEffect(() => {
     const checkAvailability = async () => {
@@ -46,6 +47,7 @@ export default function CartPage() {
           setCustomChargeValue(settingsData.custom_charge_value ?? 0)
           setFreeDeliveryAbove(settingsData.free_delivery_above ?? 0)
         }
+        setSettingsLoaded(true)
 
         // Fetch food availability
         const foodIds = items.map(item => item.foodId)
@@ -64,6 +66,7 @@ export default function CartPage() {
         setUnavailableItems(outOfStockIds)
       } catch (err) {
         console.error("Failed to sync cart status", err)
+        setSettingsLoaded(true)
       }
     }
 
