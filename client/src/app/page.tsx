@@ -91,34 +91,34 @@ const faqJsonLd = {
   mainEntity: [
     {
       "@type": "Question",
-      name: "Is Kravings Kitchen the same as kitis kitchen?",
+      name: "What is Kravings Kitchen by ARF?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Yes! KIIT students fondly call Kravings Kitchen as 'kitis kitchen' or 'kiits kitchen'. Kravings Kitchen by ARF is KIIT's favourite kitchen for biryanis, combos, parathas and late-night food delivery in Patia, Bhubaneswar.",
+        text: "Kravings Kitchen by ARF is KIIT's favourite cloud kitchen for biryanis, combos, parathas and late-night food delivery in Patia, Bhubaneswar. Loved by KIIT students for fresh, affordable meals delivered in 20 minutes.",
       },
     },
     {
       "@type": "Question",
-      name: "Where is kitis kitchen located?",
+      name: "Where is Kravings Kitchen located?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Kitis kitchen (Kravings Kitchen by ARF) is located near Royal Enfield Showroom, KIIT Road, Patia, Bhubaneswar, Odisha 751024. We deliver across KIIT, Patia, Chandrasekharpur and nearby areas.",
+        text: "Kravings Kitchen by ARF is located near Royal Enfield Showroom, KIIT Road, Patia, Bhubaneswar, Odisha 751024. We deliver across KIIT, Patia, Chandrasekharpur and nearby areas.",
       },
     },
     {
       "@type": "Question",
-      name: "What are kitis kitchen timings?",
+      name: "What are Kravings Kitchen timings?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Kitis kitchen (Kravings Kitchen) is open daily from 12:00 PM to 2:00 AM. We specialize in late-night food delivery for KIIT students and nearby residents.",
+        text: "Kravings Kitchen is open daily from 12:00 PM to 2:00 AM. We specialize in late-night food delivery for KIIT students and nearby residents in Patia, Bhubaneswar.",
       },
     },
     {
       "@type": "Question",
-      name: "What food does kitis kitchen serve?",
+      name: "What food does Kravings Kitchen serve?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Kitis kitchen (Kravings Kitchen by ARF) serves biryanis, fried rice combos, parathas, North Indian dishes, Indo-Chinese favorites, and affordable student combos. All meals are freshly prepared and delivered in 20 minutes.",
+        text: "Kravings Kitchen by ARF serves biryanis, fried rice combos, parathas, North Indian dishes, Indo-Chinese favorites, and affordable student combos. All meals are freshly prepared and delivered in 20 minutes.",
       },
     },
   ],

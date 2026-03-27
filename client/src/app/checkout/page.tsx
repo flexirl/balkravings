@@ -64,13 +64,14 @@ export default function CheckoutPage() {
   )
 
   // Dynamic fees from settings
-  const [deliveryFeeBase, setDeliveryFeeBase] = useState(40)
+  const [deliveryFeeBase, setDeliveryFeeBase] = useState(0)
   const [customChargeLabel, setCustomChargeLabel] = useState<string | null>(null)
   const [customChargeType, setCustomChargeType] = useState<'flat' | 'percent'>('flat')
   const [customChargeValue, setCustomChargeValue] = useState(0)
   const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(0)
   const [isStoreOpen, setIsStoreOpen] = useState(true)
   const [unavailableItems, setUnavailableItems] = useState<string[]>([])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   // Coupon
   const [couponCode, setCouponCode] = useState("")
@@ -170,13 +171,14 @@ export default function CheckoutPage() {
         
         if (settingsResult.data) {
           const data = settingsResult.data
-          setDeliveryFeeBase(data.delivery_fee ?? 40)
+          setDeliveryFeeBase(data.delivery_fee ?? 0)
           setCustomChargeLabel(data.custom_charge_label ?? null)
           setCustomChargeType(data.custom_charge_type ?? 'flat')
           setCustomChargeValue(data.custom_charge_value ?? 0)
           setFreeDeliveryAbove(data.free_delivery_above ?? 0)
           setIsStoreOpen(data.is_store_open ?? true)
         }
+        setSettingsLoaded(true)
         
         if (foodsResult.data) {
           const outOfStockIds = items
@@ -188,7 +190,7 @@ export default function CheckoutPage() {
             
           setUnavailableItems(outOfStockIds)
         }
-      } catch { /* fallback to defaults */ }
+      } catch { setSettingsLoaded(true) /* fallback to defaults */ }
     }
     if (items.length > 0) fetchStatus()
   }, [items])

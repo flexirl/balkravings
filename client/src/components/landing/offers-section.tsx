@@ -54,6 +54,7 @@ const CARD_STYLES = [
 
 export function OffersSection() {
   const [offers, setOffers] = useState<Omit<OfferCard, "id">[]>(DEFAULT_OFFERS)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     const fetchOffers = async () => {
@@ -67,13 +68,15 @@ export function OffersSection() {
         }
       } catch {
         // silently fall back to defaults
+      } finally {
+        setLoaded(true)
       }
     }
     fetchOffers()
   }, [])
 
   return (
-    <section id="offers" className="py-24 relative overflow-hidden">
+    <section id="offers" className={`py-24 relative overflow-hidden transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
       {/* Background Decor */}
       <div className="absolute inset-0 bg-primary/5 -z-10" />
       <div className="absolute -top-[20rem] -right-[20rem] w-[40rem] h-[40rem] bg-orange-500/10 rounded-full blur-[100px] -z-10" />
