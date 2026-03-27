@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react"
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback, startTransition } from "react"
 import { toast } from "sonner"
 import { useAuth } from "./auth-context"
 import supabase from "@/lib/supabase"
@@ -35,6 +35,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipSaveRef = useRef(false)
 
+  // Stable userId for effect deps (avoids optional chaining in dep array)
+  const userId = user?.id ?? null
+
   // ─── Load cart from Supabase when user logs in ───
   useEffect(() => {
     const currentId = user?.id || null
@@ -60,21 +63,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (currentId) {
         loadCart(currentId)
       } else {
-        setItems([])
-        setLoaded(true)
+        startTransition(() => {
+          setItems([])
+          setLoaded(true)
+        })
       }
     } else if (prevUserId.current === undefined && currentId) {
       loadCart(currentId)
     } else if (prevUserId.current === undefined) {
-      setLoaded(true)
+      startTransition(() => setLoaded(true))
     }
 
     prevUserId.current = currentId
-  }, [user?.id])
+  }, [userId])
 
-  // ─── Debounced save to Supabase on cart change ───
   const saveCart = useCallback((cartItems: CartItem[]) => {
-    if (!user?.id || skipSaveRef.current) return
+    if (!userId || skipSaveRef.current) return
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
@@ -82,10 +86,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         await supabase
           .from('profiles')
           .update({ cart: cartItems })
-          .eq('id', user.id)
+          .eq('id', userId)
       } catch { /* silent */ }
     }, 1000) // 1s debounce
-  }, [user?.id])
+  }, [userId])
 
   // Save whenever items change (after initial load)
   useEffect(() => {
