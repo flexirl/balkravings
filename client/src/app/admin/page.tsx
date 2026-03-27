@@ -73,8 +73,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldX,
-  Volume2,
-  VolumeX,
   Timer,
   Mail,
   Send,
@@ -129,7 +127,7 @@ export default function AdminDashboard() {
   const router = useRouter()
   const { activeTab, setActiveTab } = useAdminTab()
   const audioContextRef = useRef<AudioContext | null>(null)
-  const [soundEnabled, setSoundEnabled] = useState(true)
+  const soundEnabled = true // sound always on (toggle UI removed)
   const [, setTick] = useState(0) // Force re-render for prep timer
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
@@ -489,6 +487,7 @@ export default function AdminDashboard() {
     return () => {
       supabase.removeChannel(channel)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2510,6 +2509,7 @@ function EmailsTab() {
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
   const [imageUrl, setImageUrl] = useState("")
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState("")
   const [sending, setSending] = useState(false)
@@ -2589,9 +2589,10 @@ function EmailsTab() {
       })
       setLastResult(data.result)
       toast.success(data.message)
-    } catch (err: any) {
-      console.error('[BulkEmail] Failed:', err?.response?.data || err?.message || err)
-      toast.error(err?.response?.data?.message || 'Failed to send bulk email')
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } }; message?: string }
+      console.error('[BulkEmail] Failed:', error?.response?.data || error?.message || err)
+      toast.error(error?.response?.data?.message || 'Failed to send bulk email')
     } finally {
       setSending(false)
     }
