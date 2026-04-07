@@ -6,6 +6,7 @@ const PromoBanner = dynamic(() => import("@/components/promo-banner").then(m => 
 const FeaturesSection = dynamic(() => import("@/components/landing/features-section").then(m => ({ default: m.FeaturesSection })))
 const BestSellersSection = dynamic(() => import("@/components/landing/best-sellers-section").then(m => ({ default: m.BestSellersSection })))
 const OffersSection = dynamic(() => import("@/components/landing/offers-section").then(m => ({ default: m.OffersSection })))
+const WalletRewardsBanner = dynamic(() => import("@/components/landing/wallet-rewards-banner").then(m => ({ default: m.WalletRewardsBanner })))
 const TestimonialsSection = dynamic(() => import("@/components/landing/testimonials-section").then(m => ({ default: m.TestimonialsSection })))
 const CtaSection = dynamic(() => import("@/components/landing/cta-section").then(m => ({ default: m.CtaSection })))
 
@@ -200,6 +201,7 @@ export default function Home() {
       <FeaturesSection />
       <BestSellersSection />
       <OffersSection />
+      <WalletRewardsBanner />
       <TestimonialsSection />
       <AboutUs/>
       <CtaSection />

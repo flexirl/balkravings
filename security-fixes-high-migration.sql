@@ -19,6 +19,7 @@ AS $$
 DECLARE
   v_coupon RECORD;
   v_discount NUMERIC(10,2) := 0;
+  v_cashback NUMERIC(10,2) := 0;
 BEGIN
   -- Find active coupon
   SELECT * INTO v_coupon
@@ -55,18 +56,33 @@ BEGIN
       'type', 'freebie',
       'freebie_name', COALESCE(v_coupon.freebie_name, 'Free item'),
       'code', v_coupon.code,
-      'discount', 0
+      'discount', 0,
+      'cashback_amount', 0
     );
   END IF;
 
-  -- Calculate discount
+  -- Calculate raw discount
   IF v_coupon.discount_type = 'percent' THEN
     v_discount := ROUND(p_subtotal * (v_coupon.discount_value / 100));
-    IF v_coupon.max_discount > 0 THEN
-      v_discount := LEAST(v_discount, v_coupon.max_discount);
-    END IF;
   ELSE
     v_discount := v_coupon.discount_value;
+  END IF;
+
+  -- Calculate raw cashback
+  IF v_coupon.cashback_type IS NOT NULL AND v_coupon.cashback_value > 0 THEN
+    IF v_coupon.cashback_type = 'percent' THEN
+      v_cashback := ROUND(p_subtotal * (v_coupon.cashback_value / 100));
+    ELSE
+      v_cashback := v_coupon.cashback_value;
+    END IF;
+  END IF;
+
+  -- Apply combined max_discount cap: split proportionally
+  IF v_coupon.max_discount > 0 AND (v_discount + v_cashback) > v_coupon.max_discount THEN
+    IF (v_discount + v_cashback) > 0 THEN
+      v_discount := ROUND(v_coupon.max_discount * v_discount / (v_discount + v_cashback));
+      v_cashback := v_coupon.max_discount - v_discount;
+    END IF;
   END IF;
 
   RETURN jsonb_build_object(
@@ -74,6 +90,7 @@ BEGIN
     'type', 'discount',
     'code', v_coupon.code,
     'discount', v_discount,
+    'cashback_amount', v_cashback,
     'freebie_name', null
   );
 END;

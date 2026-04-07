@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import { useAdminTab } from "./layout"
 import { ReviewsTab } from "@/components/admin-reviews-tab"
+import { getDailyTokenMap } from "@/lib/daily-token"
 
 interface AppSettings {
   id?: string
@@ -27,6 +28,9 @@ interface AppSettings {
   closed_message: string | null
   banner_image: string | null
   banner_enabled: boolean
+  wallet_min_order: number
+  wallet_max_per_order: number
+  wallet_expiry_days: number
 }
 
 interface Coupon {
@@ -43,6 +47,8 @@ interface Coupon {
   expires_at: string | null
   reward_type: "discount" | "freebie"
   freebie_name: string | null
+  cashback_type: "percent" | "flat" | null
+  cashback_value: number
 }
 import { Megaphone } from "lucide-react"
 
@@ -313,7 +319,7 @@ export default function AdminDashboard() {
   const [orderStatusFilter, setOrderStatusFilter] = useState("all")
 
   // Settings
-  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, custom_charge_label: null, custom_charge_type: 'flat', custom_charge_value: 0, free_delivery_above: 0, is_store_open: true, store_opens_at: null, closed_message: null, banner_image: null, banner_enabled: false })
+  const [appSettings, setAppSettings] = useState<AppSettings>({ delivery_fee: 40, custom_charge_label: null, custom_charge_type: 'flat', custom_charge_value: 0, free_delivery_above: 0, is_store_open: true, store_opens_at: null, closed_message: null, banner_image: null, banner_enabled: false, wallet_min_order: 149, wallet_max_per_order: 50, wallet_expiry_days: 90 })
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
 
@@ -334,6 +340,9 @@ export default function AdminDashboard() {
     perUserLimit: "1",
     expiresAt: "",
     freebieName: "",
+    cashbackEnabled: false,
+    cashbackType: "percent" as "percent" | "flat",
+    cashbackValue: "",
   })
 
   // New orders badge
@@ -813,6 +822,9 @@ export default function AdminDashboard() {
       perUserLimit: (coupon.per_user_limit ?? 1).toString(),
       expiresAt: coupon.expires_at ? new Date(coupon.expires_at).toISOString().slice(0, 16) : "",
       freebieName: coupon.freebie_name || "",
+      cashbackEnabled: !!coupon.cashback_type && coupon.cashback_value > 0,
+      cashbackType: coupon.cashback_type || "percent",
+      cashbackValue: coupon.cashback_value > 0 ? coupon.cashback_value.toString() : "",
     })
     setShowCouponForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -830,6 +842,15 @@ export default function AdminDashboard() {
         per_user_limit: newCoupon.perUserLimit ? parseInt(newCoupon.perUserLimit) : 1,
         expires_at: newCoupon.expiresAt || null,
       }
+      // Cashback fields
+      if (newCoupon.cashbackEnabled && newCoupon.cashbackValue) {
+        payload.cashback_type = newCoupon.cashbackType
+        payload.cashback_value = parseFloat(newCoupon.cashbackValue)
+      } else {
+        payload.cashback_type = null
+        payload.cashback_value = 0
+      }
+
       if (newCoupon.rewardType === 'freebie') {
         payload.freebie_name = newCoupon.freebieName
         payload.discount_type = 'flat'
@@ -863,7 +884,7 @@ export default function AdminDashboard() {
         setCoupons((prev) => [data, ...prev])
         toast.success("Coupon created!")
       }
-      setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", perUserLimit: "1", expiresAt: "", freebieName: "" })
+      setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", perUserLimit: "1", expiresAt: "", freebieName: "", cashbackEnabled: false, cashbackType: "percent", cashbackValue: "" })
       setEditCouponId(null)
       setShowCouponForm(false)
     } catch (error: unknown) {
@@ -1267,6 +1288,14 @@ export default function AdminDashboard() {
                 >
                   All ({foods.length})
                 </button>
+                {foods.filter(f => !f.availability).length > 0 && (
+                  <button
+                    onClick={() => setFoodCategoryFilter("__out_of_stock__")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${foodCategoryFilter === "__out_of_stock__" ? "bg-red-500 text-white" : "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20"}`}
+                  >
+                    Out of Stock ({foods.filter(f => !f.availability).length})
+                  </button>
+                )}
                 {(() => {
                   // Build normalized category map: trimmed+lowered -> display name
                   const catMap = new Map<string, string>()
@@ -1422,9 +1451,13 @@ export default function AdminDashboard() {
                 .slice(0, 5)
                 .map(([name]) => name.toLowerCase())
 
-              // Filter by search and category (normalized: trim + lowercase)
+              // Filter by search, category, and stock status (normalized: trim + lowercase)
               const filteredFoods = foods
-                .filter(f => foodCategoryFilter === "all" || f.category.trim().toLowerCase() === foodCategoryFilter)
+                .filter(f => {
+                  if (foodCategoryFilter === "__out_of_stock__") return !f.availability
+                  if (foodCategoryFilter === "all") return true
+                  return f.category.trim().toLowerCase() === foodCategoryFilter
+                })
                 .filter(f => !foodSearch.trim() || f.name.toLowerCase().includes(foodSearch.trim().toLowerCase()))
                 .sort((a, b) => a.category.trim().toLowerCase().localeCompare(b.category.trim().toLowerCase()))
 
@@ -1549,7 +1582,9 @@ export default function AdminDashboard() {
       )}
 
       {/* ==================== ORDERS TAB ==================== */}
-      {activeTab === "orders" && (
+      {activeTab === "orders" && (() => {
+        const orderTokenMap = getDailyTokenMap(orders)
+        return (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
@@ -1615,11 +1650,22 @@ export default function AdminDashboard() {
                       <div className="flex-1">
                         {/* Customer info + trust score */}
                         <div className="flex items-center gap-3 mb-3">
-                          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
-                            {(order.customer_name || "?").charAt(0).toUpperCase()}
-                          </div>
+                          {orderTokenMap.get(order.id) ? (
+                            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center text-lg font-black text-primary-foreground flex-shrink-0 shadow-sm">
+                              {orderTokenMap.get(order.id)}
+                            </div>
+                          ) : (
+                            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
+                              {(order.customer_name || "?").charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
+                              {orderTokenMap.get(order.id) && (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                                  Token #{orderTokenMap.get(order.id)}
+                                </span>
+                              )}
                               <p className="text-sm font-semibold truncate">
                                 {order.customer_name || "Guest"}
                               </p>
@@ -1759,7 +1805,8 @@ export default function AdminDashboard() {
             )
           })()}
         </div>
-      )}
+        )
+      })()}
 
       {/* ==================== SETTINGS TAB ==================== */}
       {activeTab === "settings" && (
@@ -2054,6 +2101,52 @@ export default function AdminDashboard() {
 
                   <Separator className="bg-border" />
 
+                   {/* Wallet Settings */}
+                   <div className="space-y-4">
+                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">💰 Wallet Settings</h3>
+                     <p className="text-xs text-muted-foreground -mt-2">Control when customers can use wallet balance at checkout. Set to 0 to disable wallet usage entirely.</p>
+                     <div className="grid gap-4 sm:grid-cols-3">
+                       <div className="space-y-2">
+                         <Label className="text-sm">Min Order to Use Wallet (₹)</Label>
+                         <Input
+                           type="number"
+                           min="0"
+                           placeholder="e.g. 149"
+                           value={appSettings.wallet_min_order}
+                           onChange={(e) => setAppSettings({ ...appSettings, wallet_min_order: parseFloat(e.target.value) || 0 })}
+                           className="h-10 rounded-xl bg-secondary border-border"
+                         />
+                         <p className="text-[11px] text-muted-foreground">Min order value to apply wallet</p>
+                       </div>
+                       <div className="space-y-2">
+                         <Label className="text-sm">Max Usage Per Order (₹)</Label>
+                         <Input
+                           type="number"
+                           min="0"
+                           placeholder="e.g. 50"
+                           value={appSettings.wallet_max_per_order}
+                           onChange={(e) => setAppSettings({ ...appSettings, wallet_max_per_order: parseFloat(e.target.value) || 0 })}
+                           className="h-10 rounded-xl bg-secondary border-border"
+                         />
+                         <p className="text-[11px] text-muted-foreground">Max deduction from wallet per order</p>
+                       </div>
+                       <div className="space-y-2">
+                         <Label className="text-sm">Cashback Expiry (Days)</Label>
+                         <Input
+                           type="number"
+                           min="1"
+                           placeholder="e.g. 90"
+                           value={appSettings.wallet_expiry_days}
+                           onChange={(e) => setAppSettings({ ...appSettings, wallet_expiry_days: parseInt(e.target.value) || 90 })}
+                           className="h-10 rounded-xl bg-secondary border-border"
+                         />
+                         <p className="text-[11px] text-muted-foreground">Wallet credits expire after this many days</p>
+                       </div>
+                     </div>
+                   </div>
+
+                  <Separator className="bg-border" />
+
                   {/* Promo Banner */}
                   <div className="space-y-4">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Promo Banner (Homepage Popup)</h3>
@@ -2161,7 +2254,7 @@ export default function AdminDashboard() {
                 if (showCouponForm) {
                   setShowCouponForm(false)
                   setEditCouponId(null)
-                  setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", perUserLimit: "1", expiresAt: "", freebieName: "" })
+                  setNewCoupon({ code: "", rewardType: "discount", discountType: "percent", discountValue: "", minOrder: "", maxDiscount: "", usageLimit: "", perUserLimit: "1", expiresAt: "", freebieName: "", cashbackEnabled: false, cashbackType: "percent", cashbackValue: "" })
                 } else {
                   setShowCouponForm(true)
                 }
@@ -2264,6 +2357,9 @@ export default function AdminDashboard() {
                           onChange={(e) => setNewCoupon({ ...newCoupon, maxDiscount: e.target.value })}
                           className="h-10 rounded-xl bg-secondary border-border"
                         />
+                        <p className="text-[10px] text-muted-foreground leading-tight">
+                          Limit applies to total immediate discount + cashback added together.
+                        </p>
                       </div>
                     )}
                     <div className="space-y-2">
@@ -2298,6 +2394,48 @@ export default function AdminDashboard() {
                       onChange={(e) => setNewCoupon({ ...newCoupon, expiresAt: e.target.value })}
                       className="h-10 rounded-xl bg-secondary border-border w-auto"
                     />
+                  </div>
+
+                  {/* Wallet Cashback Section */}
+                  <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/20 space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newCoupon.cashbackEnabled}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, cashbackEnabled: e.target.checked })}
+                        className="accent-green-500 h-4 w-4"
+                      />
+                      <span className="text-sm font-medium">💰 Give Wallet Cashback</span>
+                    </label>
+                    {newCoupon.cashbackEnabled && (
+                      <div className="grid gap-3 sm:grid-cols-2 pl-7">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Cashback Type</Label>
+                          <select
+                            value={newCoupon.cashbackType}
+                            onChange={(e) => setNewCoupon({ ...newCoupon, cashbackType: e.target.value as "percent" | "flat" })}
+                            className="w-full h-9 px-3 rounded-lg bg-secondary border border-border text-sm"
+                          >
+                            <option value="percent">Percentage (%)</option>
+                            <option value="flat">Flat Amount (₹)</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Cashback Value {newCoupon.cashbackType === 'percent' ? '(%)' : '(₹)'}</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder={newCoupon.cashbackType === 'percent' ? 'e.g. 5' : 'e.g. 20'}
+                            value={newCoupon.cashbackValue}
+                            onChange={(e) => setNewCoupon({ ...newCoupon, cashbackValue: e.target.value })}
+                            className="h-9 rounded-lg bg-secondary border-border"
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground sm:col-span-2">
+                          Cashback will be credited to the user&apos;s wallet after order delivery. Expires in 90 days.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <Button
@@ -2345,6 +2483,9 @@ export default function AdminDashboard() {
                         ? `🎁 Free ${coupon.freebie_name}`
                         : coupon.discount_type === "percent" ? `${coupon.discount_value}% off` : `₹${coupon.discount_value} off`
                       }
+                      {coupon.cashback_type && coupon.cashback_value > 0 && (
+                        <span className="text-green-400"> + {coupon.cashback_type === 'percent' ? `${coupon.cashback_value}%` : `₹${coupon.cashback_value}`} wallet cashback</span>
+                      )}
                       {coupon.min_order > 0 && ` · Min ₹${coupon.min_order}`}
                       {coupon.reward_type === "discount" && coupon.max_discount > 0 && ` · Max ₹${coupon.max_discount}`}
                       {coupon.usage_limit > 0 && ` · ${coupon.used_count}/${coupon.usage_limit} used`}

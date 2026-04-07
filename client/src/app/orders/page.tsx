@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useCart } from "@/context/cart-context"
 import { useRouter } from "next/navigation"
@@ -13,6 +13,12 @@ import { ReviewPrompt } from "@/components/review-prompt"
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh"
 import supabase from "@/lib/supabase"
 import { toast } from "sonner"
+import dynamic from "next/dynamic"
+import confetti from "canvas-confetti"
+
+// Lazy-load entertainment components — zero cost on initial load
+const DeliveryTracker = dynamic(() => import("@/components/delivery-tracker"), { ssr: false })
+const PreparingAnimation = dynamic(() => import("@/components/preparing-animation"), { ssr: false })
 
 interface OrderItem { name: string; quantity: number; price: number; food_id?: string; image?: string }
 interface Order {
@@ -96,6 +102,48 @@ export default function OrdersPage() {
   const { addToCart } = useCart()
   const router = useRouter()
 
+  // Audio ref for delivery arrival chime
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  // 🎶 Arrival celebration chime — cheerful ascending melody
+  const playArrivalChime = useCallback(() => {
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+      }
+      const ctx = audioCtxRef.current
+      const now = ctx.currentTime
+      const notes = [523, 659, 784, 1047] // C5, E5, G5, C6
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = "sine"
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.4, now + i * 0.15)
+        gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.15 + 0.3)
+        osc.connect(gain).connect(ctx.destination)
+        osc.start(now + i * 0.15)
+        osc.stop(now + i * 0.15 + 0.3)
+      })
+    } catch { /* audio unavailable */ }
+  }, [])
+
+  // 🎉 Delivery confetti celebration
+  const fireDeliveryConfetti = useCallback(() => {
+    const colors = ["#22c55e", "#4ade80", "#16a34a", "#fbbf24", "#f97316"]
+    // Big center burst
+    confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors, zIndex: 9999 })
+    // Side bursts
+    setTimeout(() => {
+      confetti({ particleCount: 40, angle: 60, spread: 55, origin: { x: 0, y: 0.65 }, colors, zIndex: 9999 })
+      confetti({ particleCount: 40, angle: 120, spread: 55, origin: { x: 1, y: 0.65 }, colors, zIndex: 9999 })
+    }, 300)
+    // Second burst
+    setTimeout(() => {
+      confetti({ particleCount: 60, spread: 100, origin: { y: 0.5, x: 0.5 }, colors, zIndex: 9999 })
+    }, 700)
+  }, [])
+
   // Track which orders have been reviewed
   const [reviewedOrderIds, setReviewedOrderIds] = useState<Set<string>>(new Set())
 
@@ -158,6 +206,9 @@ export default function OrdersPage() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          const newStatus = (payload.new as { order_status: string }).order_status
+          const oldOrder = orders.find(o => o.id === (payload.new as { id: string }).id)
+
           setOrders(prev =>
             prev.map(order =>
               order.id === payload.new.id
@@ -165,7 +216,17 @@ export default function OrdersPage() {
                 : order
             )
           )
-          toast.info(`Order status: ${(payload.new as { order_status: string }).order_status.replace(/-/g, ' ')}`)
+
+          // 🎉 If status just changed to "delivered" — celebrate!
+          if (newStatus === "delivered" && oldOrder?.order_status !== "delivered") {
+            fireDeliveryConfetti()
+            playArrivalChime()
+            toast.success("🎉 Your order has been delivered! Enjoy your meal!", {
+              duration: 5000,
+            })
+          } else {
+            toast.info(`Order status: ${newStatus.replace(/-/g, ' ')}`)
+          }
         }
       )
       .subscribe()
@@ -173,7 +234,7 @@ export default function OrdersPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [user])
+  }, [user, orders, fireDeliveryConfetti, playArrivalChime])
 
   const handleReorder = (order: Order) => {
     const items = order.order_items || []
@@ -290,6 +351,16 @@ export default function OrdersPage() {
 
               {/* Order Timeline */}
               <OrderTimeline status={order.order_status} />
+
+              {/* Preparing Animation + Dino Game */}
+              {order.order_status === "preparing" && (
+                <PreparingAnimation />
+              )}
+
+              {/* Delivery Rider Animation */}
+              {order.order_status === "out-for-delivery" && (
+                <DeliveryTracker />
+              )}
 
               {/* Review Prompt — only for delivered, unreviewed orders */}
               {order.order_status === "delivered" && !reviewedOrderIds.has(order.id) && (

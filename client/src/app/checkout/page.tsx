@@ -11,6 +11,7 @@ import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabase"
 import api from "@/lib/api"
+import { useWallet } from "@/context/wallet-context"
 import {
   Loader2,
   Banknote,
@@ -21,12 +22,14 @@ import {
   ShoppingBag,
   Clock,
   Ban,
+  Wallet,
 } from "lucide-react"
 import Link from "next/link"
 
 export default function CheckoutPage() {
   const { items, totalAmount, clearCart } = useCart()
   const { user } = useAuth()
+  const { walletBalance, refreshWalletBalance } = useWallet()
   const router = useRouter()
 
   const [customerName, setCustomerName] = useState(user?.name || "")
@@ -72,6 +75,8 @@ export default function CheckoutPage() {
   const [isStoreOpen, setIsStoreOpen] = useState(true)
   const [unavailableItems, setUnavailableItems] = useState<string[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [walletMinOrder, setWalletMinOrder] = useState(149)
+  const [walletMaxPerOrder, setWalletMaxPerOrder] = useState(50)
 
   // Coupon
   const [couponCode, setCouponCode] = useState("")
@@ -79,6 +84,10 @@ export default function CheckoutPage() {
   const [couponApplied, setCouponApplied] = useState("")
   const [couponLoading, setCouponLoading] = useState(false)
   const [couponFreebie, setCouponFreebie] = useState("")
+
+  // Wallet
+  const [useWalletBalance, setUseWalletBalance] = useState(false)
+  const [cashbackAmount, setCashbackAmount] = useState(0)
 
   // Auto-fill from selected address
   useEffect(() => {
@@ -177,6 +186,8 @@ export default function CheckoutPage() {
           setCustomChargeValue(data.custom_charge_value ?? 0)
           setFreeDeliveryAbove(data.free_delivery_above ?? 0)
           setIsStoreOpen(data.is_store_open ?? true)
+          setWalletMinOrder(data.wallet_min_order ?? 149)
+          setWalletMaxPerOrder(data.wallet_max_per_order ?? 50)
         }
         setSettingsLoaded(true)
         
@@ -199,7 +210,14 @@ export default function CheckoutPage() {
   const customCharge = (customChargeLabel && customChargeValue > 0)
     ? (customChargeType === 'percent' ? Math.round(totalAmount * (customChargeValue / 100)) : customChargeValue)
     : 0
-  const grandTotal = Math.max(0, totalAmount + deliveryFee + customCharge - couponDiscount)
+
+  // Wallet deduction logic: uses admin-configurable limits
+  const canUseWallet = user && walletBalance > 0 && totalAmount >= walletMinOrder && walletMaxPerOrder > 0
+  const preWalletTotal = Math.max(0, totalAmount + deliveryFee + customCharge - couponDiscount)
+  const walletDeduction = useWalletBalance && canUseWallet
+    ? Math.min(walletBalance, walletMaxPerOrder, preWalletTotal)
+    : 0
+  const grandTotal = Math.max(0, preWalletTotal - walletDeduction)
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return
@@ -231,11 +249,18 @@ export default function CheckoutPage() {
           setCouponDiscount(0)
           setCouponFreebie(result.freebie_name || 'Free item')
           setCouponApplied(result.code)
+          setCashbackAmount(0)
           toast.success(`🎁 Free ${result.freebie_name} added to your order!`)
         } else {
           setCouponDiscount(result.discount)
           setCouponFreebie("")
           setCouponApplied(result.code)
+          // Calculate cashback if coupon has cashback config
+          if (result.cashback_amount && result.cashback_amount > 0) {
+            setCashbackAmount(result.cashback_amount)
+          } else {
+            setCashbackAmount(0)
+          }
           toast.success(`Coupon applied! ₹${result.discount} off`)
         }
         return
@@ -288,6 +313,7 @@ export default function CheckoutPage() {
         setCouponDiscount(0)
         setCouponFreebie(coupon.freebie_name || 'Free item')
         setCouponApplied(coupon.code)
+        setCashbackAmount(0)
         toast.success(`🎁 Free ${coupon.freebie_name} added to your order!`)
       } else {
         let discount = 0
@@ -300,6 +326,23 @@ export default function CheckoutPage() {
         setCouponDiscount(discount)
         setCouponFreebie("")
         setCouponApplied(coupon.code)
+        // Calculate cashback from coupon config (with combined cap)
+        let cb = 0
+        if (coupon.cashback_type && coupon.cashback_value > 0) {
+          if (coupon.cashback_type === 'percent') {
+            cb = Math.round(totalAmount * (coupon.cashback_value / 100))
+          } else {
+            cb = coupon.cashback_value
+          }
+        }
+        // Apply combined max_discount cap: split proportionally
+        if (coupon.max_discount > 0 && (discount + cb) > coupon.max_discount) {
+          const total = discount + cb
+          discount = Math.round(coupon.max_discount * discount / total)
+          cb = coupon.max_discount - discount
+          setCouponDiscount(discount)
+        }
+        setCashbackAmount(cb)
         toast.success(`Coupon applied! ₹${discount} off`)
       }
     } catch {
@@ -317,6 +360,7 @@ export default function CheckoutPage() {
     setCouponDiscount(0)
     setCouponApplied("")
     setCouponFreebie("")
+    setCashbackAmount(0)
   }
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -406,6 +450,8 @@ export default function CheckoutPage() {
         p_customer_phone: phone,
         p_freebie_item: couponFreebie || null,
         p_coupon_code: couponApplied || null,
+        p_wallet_deduction: walletDeduction,
+        p_cashback_amount: cashbackAmount,
         p_items: items.map(item => ({
           food_id: item.foodId,
           quantity: item.quantity,
@@ -446,6 +492,8 @@ export default function CheckoutPage() {
             phone_verified: true,
             payment_method: 'cod',
             freebie_item: couponFreebie || null,
+            wallet_deduction: walletDeduction,
+            cashback_amount: cashbackAmount,
           })
           .select()
           .single()
@@ -493,7 +541,25 @@ export default function CheckoutPage() {
         } catch { /* silent */ }
       }
 
+      // Debit wallet if used
+      if (walletDeduction > 0) {
+        try {
+          await supabase.rpc('debit_wallet', {
+            p_user_id: user.id,
+            p_amount: walletDeduction,
+            p_reason: 'Order payment — #' + orderId.slice(0, 8),
+            p_order_id: orderId,
+          })
+          await refreshWalletBalance()
+        } catch { /* wallet debit failed but order is placed */ }
+      }
+
       clearCart()
+
+      // Show cashback toast if applicable
+      if (cashbackAmount > 0) {
+        toast.success(`🎉 ₹${cashbackAmount} cashback will be added to your wallet after delivery!`, { duration: 5000 })
+      }
 
       // Order confirmation email is sent automatically by the server-side
       // Realtime listener (orderEmailListener) when the INSERT is detected.
@@ -754,7 +820,7 @@ export default function CheckoutPage() {
                     <span className="text-green-400 text-xs font-medium">
                       {couponFreebie
                         ? `🎁 ${couponApplied} applied — Free ${couponFreebie}!`
-                        : `🎉 ${couponApplied} applied — ₹${couponDiscount} off`
+                        : `🎉 ${couponApplied} applied — ₹${couponDiscount} off${cashbackAmount > 0 ? ` + ₹${cashbackAmount} cashback` : ''}`
                       }
                     </span>
                     <button
@@ -777,6 +843,67 @@ export default function CheckoutPage() {
                   <div className="flex justify-between text-green-400">
                     <span>Coupon Discount</span>
                     <span>-₹{couponDiscount}</span>
+                  </div>
+                )}
+
+                {/* Cashback info */}
+                {cashbackAmount > 0 && (
+                  <div className="flex items-center gap-2 bg-primary/5 rounded-lg px-3 py-2 border border-primary/10">
+                    <Wallet className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                    <span className="text-xs text-primary font-medium">
+                      💰 ₹{cashbackAmount} cashback to wallet after delivery
+                    </span>
+                  </div>
+                )}
+
+                {/* Wallet Balance Toggle */}
+                {canUseWallet && (
+                  <div className="p-2.5 sm:p-3 rounded-xl bg-card border border-border space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-500 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium whitespace-nowrap">Use Wallet</span>
+                        <span className="text-[10px] sm:text-xs text-muted-foreground truncate">(₹{walletBalance.toFixed(0)})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUseWalletBalance(!useWalletBalance)}
+                        className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                          useWalletBalance ? 'bg-green-500' : 'bg-secondary border border-border'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                            useWalletBalance ? 'translate-x-5' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {useWalletBalance && walletDeduction > 0 && (
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        Max ₹{walletMaxPerOrder}/order • Deducting ₹{walletDeduction}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Wallet deduction line */}
+                {walletDeduction > 0 && (
+                  <div className="flex justify-between text-green-400">
+                    <span className="flex items-center gap-1">
+                      <Wallet className="h-3.5 w-3.5" /> Wallet
+                    </span>
+                    <span>-₹{walletDeduction}</span>
+                  </div>
+                )}
+
+                {/* Smart wallet upsell — encourage adding more to unlock savings */}
+                {user && walletBalance > 0 && totalAmount < walletMinOrder && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-green-500/5 border border-green-500/15">
+                    <Wallet className="h-4 w-4 text-green-500 flex-shrink-0" />
+                    <p className="text-[11px] sm:text-xs text-muted-foreground">
+                      Add <span className="font-bold text-foreground">₹{(walletMinOrder - totalAmount).toFixed(0)}</span> more to save <span className="font-bold text-green-500">₹{Math.min(walletBalance, walletMaxPerOrder)}</span> with wallet!
+                    </p>
                   </div>
                 )}
 

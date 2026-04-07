@@ -110,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: profileResult.data.role || 'user',
         addresses: addressesResult.data || [],
       }
+      console.log('[Auth] Profile fetched:', result.email, 'role:', result.role)
       profileCache.current.set(supabaseUser.id, result)
       return result
     } catch (err) {
@@ -134,9 +135,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession)
 
         if (newSession?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
+          // Clear cache on INITIAL_SESSION so role changes in DB are picked up on refresh
+          if (event === 'INITIAL_SESSION') {
+            profileCache.current.delete(newSession.user.id)
+          }
           const profile = await fetchOrCreateProfile(newSession.user)
           setUser(profile)
           setLoading(false)
+
+          // Auto-redirect delivery role users to /delivery
+          if (profile?.role === 'delivery' && typeof window !== 'undefined') {
+            const path = window.location.pathname
+            if (!path.startsWith('/delivery')) {
+              router.push('/delivery')
+            }
+          }
         } else if (event === 'SIGNED_OUT') {
           setUser(null)
           profileCache.current.clear()
@@ -150,9 +163,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session: currentSession } } = await supabase.auth.getSession()
 
       if (currentSession?.user) {
+        // Always clear cache on init to pick up DB role changes
+        profileCache.current.delete(currentSession.user.id)
         setSession(currentSession)
         const profile = await fetchOrCreateProfile(currentSession.user)
         setUser(profile)
+
+        // Auto-redirect delivery role users
+        if (profile?.role === 'delivery' && typeof window !== 'undefined') {
+          const path = window.location.pathname
+          if (!path.startsWith('/delivery')) {
+            router.push('/delivery')
+          }
+        }
       }
       setLoading(false)
     }
