@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Bebas_Neue } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
-import { WhatsAppFloat } from "@/components/whatsapp-float";
+import { LayoutShell } from "@/components/layout-shell";
 
 import { Galindo } from "next/font/google";
 
@@ -121,12 +119,10 @@ export default function RootLayout({
       </head>
       <body className={`${inter.variable} ${bebneue.variable}  ${galindo.variable} min-h-screen bg-background font-sans antialiased`}>
         <Providers>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Footer />
-          <WhatsAppFloat />
+          <LayoutShell>{children}</LayoutShell>
         </Providers>
       </body>
     </html>
   );
 }
+

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import { useAdminTab } from "./layout"
 import { ReviewsTab } from "@/components/admin-reviews-tab"
+import { getDailyTokenMap } from "@/lib/daily-token"
 
 interface AppSettings {
   id?: string
@@ -1267,6 +1268,14 @@ export default function AdminDashboard() {
                 >
                   All ({foods.length})
                 </button>
+                {foods.filter(f => !f.availability).length > 0 && (
+                  <button
+                    onClick={() => setFoodCategoryFilter("__out_of_stock__")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${foodCategoryFilter === "__out_of_stock__" ? "bg-red-500 text-white" : "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20"}`}
+                  >
+                    Out of Stock ({foods.filter(f => !f.availability).length})
+                  </button>
+                )}
                 {(() => {
                   // Build normalized category map: trimmed+lowered -> display name
                   const catMap = new Map<string, string>()
@@ -1422,9 +1431,13 @@ export default function AdminDashboard() {
                 .slice(0, 5)
                 .map(([name]) => name.toLowerCase())
 
-              // Filter by search and category (normalized: trim + lowercase)
+              // Filter by search, category, and stock status (normalized: trim + lowercase)
               const filteredFoods = foods
-                .filter(f => foodCategoryFilter === "all" || f.category.trim().toLowerCase() === foodCategoryFilter)
+                .filter(f => {
+                  if (foodCategoryFilter === "__out_of_stock__") return !f.availability
+                  if (foodCategoryFilter === "all") return true
+                  return f.category.trim().toLowerCase() === foodCategoryFilter
+                })
                 .filter(f => !foodSearch.trim() || f.name.toLowerCase().includes(foodSearch.trim().toLowerCase()))
                 .sort((a, b) => a.category.trim().toLowerCase().localeCompare(b.category.trim().toLowerCase()))
 
@@ -1549,7 +1562,9 @@ export default function AdminDashboard() {
       )}
 
       {/* ==================== ORDERS TAB ==================== */}
-      {activeTab === "orders" && (
+      {activeTab === "orders" && (() => {
+        const orderTokenMap = getDailyTokenMap(orders)
+        return (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
@@ -1615,11 +1630,22 @@ export default function AdminDashboard() {
                       <div className="flex-1">
                         {/* Customer info + trust score */}
                         <div className="flex items-center gap-3 mb-3">
-                          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
-                            {(order.customer_name || "?").charAt(0).toUpperCase()}
-                          </div>
+                          {orderTokenMap.get(order.id) ? (
+                            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center text-lg font-black text-primary-foreground flex-shrink-0 shadow-sm">
+                              {orderTokenMap.get(order.id)}
+                            </div>
+                          ) : (
+                            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
+                              {(order.customer_name || "?").charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
+                              {orderTokenMap.get(order.id) && (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                                  Token #{orderTokenMap.get(order.id)}
+                                </span>
+                              )}
                               <p className="text-sm font-semibold truncate">
                                 {order.customer_name || "Guest"}
                               </p>
@@ -1759,7 +1785,8 @@ export default function AdminDashboard() {
             )
           })()}
         </div>
-      )}
+        )
+      })()}
 
       {/* ==================== SETTINGS TAB ==================== */}
       {activeTab === "settings" && (

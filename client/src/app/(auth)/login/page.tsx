@@ -28,7 +28,7 @@ export default function LoginPage() {
         toast.error(result.error)
       } else {
         toast.success("Welcome back!")
-        router.push(result.role === "admin" ? "/admin" : "/")
+        router.push(result.role === "admin" ? "/admin" : result.role === "delivery" ? "/delivery" : "/")
       }
     } catch {
       toast.error("Something went wrong")

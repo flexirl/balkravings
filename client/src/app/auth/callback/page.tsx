@@ -8,6 +8,20 @@ import { Loader2 } from "lucide-react"
 export default function AuthCallbackPage() {
   const router = useRouter()
 
+  // Determine redirect path based on user role
+  const getRedirectPath = async (userId: string): Promise<string> => {
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .single()
+      if (data?.role === "admin") return "/admin"
+      if (data?.role === "delivery") return "/delivery"
+    } catch { /* fallback to home */ }
+    return "/"
+  }
+
   useEffect(() => {
     const handleCallback = async () => {
       try {
@@ -21,15 +35,17 @@ export default function AuthCallbackPage() {
         }
 
         if (session) {
-          // Session established — redirect to homepage
-          router.push("/")
+          // Session established — redirect based on role
+          const path = await getRedirectPath(session.user.id)
+          router.push(path)
         } else {
           // No session yet — wait for onAuthStateChange to fire
           const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            (event, newSession) => {
+            async (event, newSession) => {
               if (event === "SIGNED_IN" && newSession) {
                 subscription.unsubscribe()
-                router.push("/")
+                const path = await getRedirectPath(newSession.user.id)
+                router.push(path)
               }
             }
           )
