@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ShoppingCart, LogOut } from "lucide-react";
+import { Menu, X, ShoppingCart, LogOut, Wallet } from "lucide-react";
+import { useWallet } from "@/context/wallet-context";
 import { useAuth } from "@/context/auth-context";
 import { useCart } from "@/context/cart-context";
 import { StoreBanner } from "./store-banner";
@@ -22,6 +23,7 @@ import supabase from "@/lib/supabase";
 export function Navbar() {
   const { user, logout } = useAuth();
   const { cartCount } = useCart();
+  const { walletBalance, walletLoading } = useWallet();
   const isAdmin = user?.role === "admin";
 
   const [isOpen, setIsOpen] = useState(false);
@@ -144,7 +146,24 @@ export function Navbar() {
           </Link>
 
           {/* RIGHT SECTION */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
+
+            {/* WALLET — Always visible when logged in */}
+            {user && !walletLoading && (
+              <Link
+                href="/profile?tab=wallet"
+                className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-colors ${
+                  walletBalance > 0
+                    ? 'bg-green-500/10 border-green-500/20 hover:bg-green-500/15'
+                    : 'bg-secondary/50 border-border hover:bg-secondary'
+                }`}
+              >
+                <Wallet className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${walletBalance > 0 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                <span className={`text-[10px] sm:text-xs font-bold ${walletBalance > 0 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  ₹{walletBalance.toFixed(0)}
+                </span>
+              </Link>
+            )}
 
             {/* CART — Always visible */}
             <Link href="/cart" className="relative">
